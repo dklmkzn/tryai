@@ -17,6 +17,8 @@ const allowedGroupsNoDomainCheck = [''];   // замените
 // ===== ФЛАГ ЛОГИРОВАНИЯ ССЫЛОК =====
 const LOG_URLS = true;   // true – выводить ссылки в лог, false – не выводить
 
+console.log(`версия: 0.0.36`);
+
 // ===== КОНФИГУРАЦИЯ =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_USERNAME_MASK = process.env.ADMIN_USERNAME_MASK || 'd*n';
@@ -132,7 +134,9 @@ function parseContent(fullText) {
         .trim();
 
     // Удаляем фразу "Данный формат временно недоступен для этого видео"
+    console.log(`текст: ${cleanText}`);
     cleanText = cleanText.replace(/Данный формат временно недоступен для этого видео/g, '');
+    console.log(`повторно текст: ${cleanText}`);
 
     return { title: titleText, content: cleanText };
 }
