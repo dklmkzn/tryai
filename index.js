@@ -1,23 +1,9 @@
-// index.js — финальная версия
+
+// index.js — полная финальная версия
 const express = require('express');
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
 const cheerio = require('cheerio');
-
-// ===== КОНФИГУРАЦИЯ =====
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const ADMIN_USERNAME_MASK = process.env.ADMIN_USERNAME_MASK || 'd*n';
-const YANDEX_TOKEN = process.env.YANDEX_TOKEN;
-const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_URL;
-const PORT = process.env.PORT || 3000;
-
-const ACTIVE_INTERVAL = 3000;
-const MAX_ACTIVE_ATTEMPTS = 100;
-const LONG_INTERVAL = 60000;
-const MAX_LONG_ATTEMPTS = 20;
-
-const PING_MIN_INTERVAL = 10 * 60 * 1000;
-const PING_MAX_INTERVAL = 13 * 60 * 1000;
 
 // ===== РАЗРЕШЁННЫЕ ДОМЕНЫ, ПОЛЬЗОВАТЕЛИ (username), КАНАЛЫ И ГРУППЫ (ID) =====
 const allowedDomains = ['nplus1.ru', 'naked-science.ru', '300.ya.ru'];
@@ -25,17 +11,44 @@ const allowedUsernames = []; // пока пусто — только админ 
 const allowedChannels = ['-1001390761594', '-1002753237331', '-1002872429524', '-1002507851276'];   // замените на реальные ID каналов
 const allowedGroups = [];     // замените на реальные ID групп
 
+// ===== КОНФИГУРАЦИЯ (переменные окружения) =====
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const ADMIN_USERNAME_MASK = process.env.ADMIN_USERNAME_MASK || 'd*n'; // первая и последняя буква
+const YANDEX_TOKEN = process.env.YANDEX_TOKEN;
+const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_URL;
+const PORT = process.env.PORT || 3000;
+
+// Параметры проверки готовности контента
+const ACTIVE_INTERVAL = 3000;          // 3 секунды
+const MAX_ACTIVE_ATTEMPTS = 100;       // 5 минут
+const LONG_INTERVAL = 60000;           // 1 минута
+const MAX_LONG_ATTEMPTS = 20;          // ещё 20 минут
+
+// Параметры дежурного пинга (случайный интервал 10-13 минут)
+const PING_MIN_INTERVAL = 10 * 60 * 1000;
+const PING_MAX_INTERVAL = 13 * 60 * 1000;
+
+// ===== РАЗРЕШЁННЫЕ ДОМЕНЫ, ПОЛЬЗОВАТЕЛИ (username), КАНАЛЫ И ГРУППЫ (ID) =====
+const allowedDomains = ['nplus1.ru', 'naked-science.ru', '300.ya.ru'];
+const allowedUsernames = []; // пока пусто — только админ имеет доступ
+const allowedChannels = ['-1001234567890'];   // замените на реальные ID каналов
+const allowedGroups = ['-1009876543210'];     // замените на реальные ID групп
+
 // ===== ИНИЦИАЛИЗАЦИЯ =====
 const app = express();
 app.use(express.json());
 
 const bot = new TelegramBot(BOT_TOKEN);
 
+// Глобальное хранилище задач (Map) – для локального контроля
 const tasks = new Map();
+
+// Переменная для chat_id администратора (заполняется при первом подходящем сообщении)
 let adminChatId = null;
 
 // ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
+// Проверка соответствия username маске (первая и последняя буква)
 function isUsernameMatchMask(username) {
     if (!username || !ADMIN_USERNAME_MASK) return false;
     const first = ADMIN_USERNAME_MASK[0];
@@ -43,6 +56,7 @@ function isUsernameMatchMask(username) {
     return username[0] === first && username[username.length - 1] === last;
 }
 
+// Отправка уведомления администратору (только если он уже назначен)
 async function notifyAdmin(message) {
     if (!adminChatId) {
         console.warn('Администратор ещё не назначен, уведомление не отправлено:', message);
@@ -55,8 +69,9 @@ async function notifyAdmin(message) {
     }
 }
 
-// ===== ФУНКЦИИ ДЛЯ 300.YA.RU =====
+// ===== ФУНКЦИИ ДЛЯ РАБОТЫ С 300.YA.RU =====
 
+// Получение короткой ссылки через API Яндекса
 async function getShortUrl(articleUrl) {
     if (articleUrl.includes('300.ya.ru')) {
         return { status: 'success', sharing_url: articleUrl };
@@ -79,6 +94,7 @@ async function getShortUrl(articleUrl) {
     }
 }
 
+// Извлечение текста со страницы 300.ya.ru через cheerio
 async function extractTextFromYaRu(url) {
     try {
         const response = await axios.get(url, {
@@ -96,6 +112,7 @@ async function extractTextFromYaRu(url) {
     }
 }
 
+// Парсинг содержимого (ваша логика из newbot.js)
 function parseContent(fullText) {
     const isYandexGptSummary = /YandexGPT\s+краткий пересказ статьи от нейросети/im.test(fullText);
     const startMarker = /Пересказ сделан (.{0,50}?)Обновить/s;
@@ -132,6 +149,7 @@ function parseContent(fullText) {
     return { title: titleText, content: cleanText };
 }
 
+// Форматирование новости с разделением на части (если длиннее 4096 символов)
 function formatNews(title, content) {
     const BUTTON_TEXT = 'Открыть пересказ на 300.ya.ru';
     const BUTTON_URL_LENGTH = 30;
@@ -177,19 +195,18 @@ function formatNews(title, content) {
     return messageParts;
 }
 
-async function sendContentToUser(chatId, content, shortUrl) {
+// Отправка контента пользователю (с разбивкой на части)
+async function sendContentToUser(chatId, content) {
     const parts = formatNews(content.title, content.content);
-    const reply_markup = {
-        inline_keyboard: [
-            [{ text: 'Открыть пересказ на 300.ya.ru', url: shortUrl }]
-        ]
-    };
     for (const part of parts) {
-        await bot.sendMessage(chatId, part, { parse_mode: 'HTML', reply_markup });
+        await bot.sendMessage(chatId, part, { parse_mode: 'HTML' });
+    }
+    if (content.origin) {
+        await bot.sendMessage(chatId, `🔗 Оригинал: ${content.origin}`);
     }
 }
 
-// ===== SELF-PING =====
+// ===== ФУНКЦИЯ SELF-PING (отправка запроса на /process) =====
 function scheduleSelfPing(params) {
     const url = `${RENDER_URL}/process?` + new URLSearchParams(params).toString();
     setTimeout(() => {
@@ -199,7 +216,9 @@ function scheduleSelfPing(params) {
 
 // ===== ЭНДПОИНТЫ =====
 
+// 1. Вебхук от Telegram
 app.post('/webhook', async (req, res) => {
+    // Немедленно отвечаем Telegram
     res.sendStatus(200);
 
     const { message } = req.body;
@@ -209,22 +228,22 @@ app.post('/webhook', async (req, res) => {
     const chatType = message.chat.type;
     const text = message.text;
 
-    // Назначение администратора
+    // === НАЗНАЧЕНИЕ АДМИНИСТРАТОРА (только в личке) ===
     if (!adminChatId && chatType === 'private') {
         const username = message.from?.username;
         if (username && isUsernameMatchMask(username)) {
             adminChatId = chatId;
-            console.log(`Администратор назначен (chat_id: ${adminChatId})`);
-            await bot.sendMessage(adminChatId, 'Администратор назначен.');
+            console.log(`Администратор назначен: ${username} (chat_id: ${adminChatId})`);
+            await bot.sendMessage(adminChatId, '✅ Вы назначены администратором бота. Уведомления об ошибках будут приходить сюда.');
         } else {
             if (username) {
                 await bot.sendMessage(chatId, '❌ Ваш username не подходит для роли администратора.');
             }
-            return;
+            return; // не обрабатываем ссылки от неадминов в личке
         }
     }
 
-    // Проверка разрешений
+    // === ПРОВЕРКА РАЗРЕШЁННЫХ КАНАЛОВ/ГРУПП И АВТОРА ===
     const isChannel = chatType === 'channel';
     const isGroup = chatType === 'group' || chatType === 'supergroup';
     const isPrivate = chatType === 'private';
@@ -243,6 +262,7 @@ app.post('/webhook', async (req, res) => {
     const isAdmin = (adminChatId && userId === adminChatId);
     const isAllowedUser = (username && allowedUsernames.includes(username));
 
+    // Для каналов: если автор отсутствует (анонимный пост) – разрешаем, иначе проверяем
     if (isChannel && !message.from) {
         console.log(`Анонимный пост в канале ${chatId}, обрабатываем`);
     } else {
@@ -252,14 +272,13 @@ app.post('/webhook', async (req, res) => {
         }
     }
 
-    console.log(`Исходный URL: ${originalUrl}`);
-    
-    // Обработка ссылок
+    // === ОБРАБОТКА ССЫЛОК ===
     const urlMatch = text.match(/https?:\/\/[^\s]+/);
     if (!urlMatch) return;
 
     const originalUrl = urlMatch[0];
 
+    // Проверка домена
     try {
         const hostname = new URL(originalUrl).hostname;
         if (!allowedDomains.includes(hostname)) {
@@ -280,26 +299,20 @@ app.post('/webhook', async (req, res) => {
         }
         const shortUrl = shortResult.sharing_url;
 
-        const initialKeyboard = {
-            inline_keyboard: [
-                [{ text: 'Открыть пересказ на 300.ya.ru', url: shortUrl }]
-            ]
-        };
-        const sentMsg = await bot.sendMessage(chatId, 
-            `✅ Ссылка на пересказ: ${shortUrl}\nТекст готовится, ожидайте...`,
-            { reply_markup: initialKeyboard }
-        );
+        // Отправляем пользователю первое сообщение
+        await bot.sendMessage(chatId, `✅ Ссылка на пересказ: ${shortUrl}\nТекст готовится, ожидайте...`);
 
+        // Создаём задачу (сохраняем в Map для локального контроля)
         const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
         const params = {
             shortUrl,
             chatId,
             attempt: 1,
-            phase: 'active',
-            messageId: sentMsg.message_id
+            phase: 'active'
         };
         tasks.set(taskId, { ...params, createdAt: Date.now() });
 
+        // Запускаем первую проверку через 3 секунды
         scheduleSelfPing(params);
     } catch (e) {
         console.error('Ошибка в вебхуке:', e);
@@ -308,10 +321,11 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
+// 2. Эндпоинт для обработки задачи (self-ping)
 app.get('/process', async (req, res) => {
     res.sendStatus(200);
 
-    const { shortUrl, chatId, attempt, phase, messageId } = req.query;
+    const { shortUrl, chatId, attempt, phase } = req.query;
     if (!shortUrl || !chatId) {
         console.warn('Недостаточно параметров в /process');
         return;
@@ -319,27 +333,12 @@ app.get('/process', async (req, res) => {
 
     const attemptNum = parseInt(attempt) || 0;
     const currentPhase = phase || 'active';
-    const msgId = parseInt(messageId) || null;
 
     try {
         const content = await extractTextFromYaRu(shortUrl);
         if (content.status === 200 && content.content && content.content.length > 100) {
-            await sendContentToUser(chatId, content, shortUrl);
-            if (msgId) {
-                try {
-                    await bot.editMessageText('✅ Пересказ готов (смотрите ниже)', {
-                        chat_id: chatId,
-                        message_id: msgId,
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: 'Открыть пересказ на 300.ya.ru', url: shortUrl }]
-                            ]
-                        }
-                    });
-                } catch (e) {
-                    console.warn('Не удалось отредактировать первое сообщение:', e.message);
-                }
-            }
+            await sendContentToUser(chatId, content);
+            // Удаляем задачу из Map (если есть)
             for (const [key, val] of tasks.entries()) {
                 if (val.shortUrl === shortUrl && val.chatId === chatId) {
                     tasks.delete(key);
@@ -366,14 +365,6 @@ app.get('/process', async (req, res) => {
         if (nextAttempt > MAX_LONG_ATTEMPTS) {
             await bot.sendMessage(chatId, '❌ Не удалось получить текст. Попробуйте позже.');
             await notifyAdmin(`Задача для ${shortUrl} не завершена после всех попыток`);
-            if (msgId) {
-                try {
-                    await bot.editMessageText('❌ Ошибка получения пересказа', {
-                        chat_id: chatId,
-                        message_id: msgId
-                    });
-                } catch (e) {}
-            }
             for (const [key, val] of tasks.entries()) {
                 if (val.shortUrl === shortUrl && val.chatId === chatId) {
                     tasks.delete(key);
@@ -390,8 +381,7 @@ app.get('/process', async (req, res) => {
         shortUrl,
         chatId,
         attempt: nextAttempt,
-        phase: nextPhase,
-        messageId: msgId || ''
+        phase: nextPhase
     };
     for (const [key, val] of tasks.entries()) {
         if (val.shortUrl === shortUrl && val.chatId === chatId) {
@@ -404,10 +394,12 @@ app.get('/process', async (req, res) => {
     }, interval);
 });
 
+// 3. Эндпоинт для дежурного пинга (поддержание активности)
 app.get('/ping', (req, res) => {
     res.sendStatus(200);
 });
 
+// 4. Эндпоинт статуса (опционально)
 app.get('/status', (req, res) => {
     res.json({
         uptime: process.uptime(),
@@ -417,7 +409,7 @@ app.get('/status', (req, res) => {
     });
 });
 
-// ===== ЗАПУСК =====
+// ===== ЗАПУСК СЕРВЕРА И НАСТРОЙКА ВЕБХУКА =====
 
 function startPingScheduler() {
     const randomInterval = () => {
@@ -436,19 +428,20 @@ function startPingScheduler() {
     setTimeout(doPing, 10000);
 }
 
+// Функция установки вебхука через прямой HTTP-запрос
 async function setWebhook(url) {
     if (!url) {
-        console.error('RENDER_URL не определён');
+        console.error('RENDER_URL не определён, вебхук не может быть установлен');
         return false;
     }
     const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/setWebhook?url=${encodeURIComponent(url)}`;
     try {
         const response = await axios.get(apiUrl);
         if (response.data && response.data.ok) {
-            console.log(`Вебхук установлен на ${url}`);
+            console.log(`Вебхук успешно установлен на ${url}`);
             return true;
         } else {
-            console.error('Ошибка установки вебхука:', response.data.description);
+            console.error('Ошибка установки вебхука:', response.data.description || 'неизвестная ошибка');
             return false;
         }
     } catch (e) {
@@ -462,5 +455,5 @@ app.listen(PORT, async () => {
     const webhookUrl = `${RENDER_URL}/webhook`;
     await setWebhook(webhookUrl);
     startPingScheduler();
-    console.log(`Ожидание первого сообщения от пользователя с маской "${ADMIN_USERNAME_MASK}"`);
+    console.log(`Ожидание первого сообщения от пользователя с username, соответствующим маске "${ADMIN_USERNAME_MASK}"`);
 });
