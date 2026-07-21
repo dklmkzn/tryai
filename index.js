@@ -18,7 +18,7 @@ const allowedGroupsNoDomainCheck = [''];   // замените
 const LOG_URLS = true;   // true – выводить ссылки в лог, false – не выводить
 
 // ===== ВЕРСИЯ =====
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 
 // ===== КОНФИГУРАЦИЯ (переменные окружения) =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -209,18 +209,25 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 
     const { message } = req.body;
-    if (!message || !message.text) return;
+    if (!message || !message.text) {
+        // Логируем пустые или не текстовые сообщения (опционально)
+        return;
+    }
 
     const chatId = message.chat.id;
     const chatType = message.chat.type;
     const text = message.text;
+    const username = message.from?.username || 'без username';
+    const userId = message.from?.id;
+
+    // === ДИАГНОСТИКА ВСЕХ ВХОДЯЩИХ ВЕБХУКОВ ===
+    logToAdmin(`📥 Вебхук: chatId=${chatId}, type=${chatType}, user=${username}, text=${text.substring(0, 80)}${text.length > 80 ? '...' : ''}`);
 
     // Назначение администратора (только в личке)
     if (!adminChatId && chatType === 'private') {
-        const username = message.from?.username;
         if (username && isUsernameMatchMask(username)) {
             adminChatId = chatId;
-            logToAdmin(`Администратор назначен (chat_id: ${adminChatId})`);
+            console.log(`Администратор назначен (chat_id: ${adminChatId})`);
             await bot.sendMessage(adminChatId, '✅ Вы назначились администратором бота.');
         } else {
             if (username) {
@@ -235,41 +242,55 @@ app.post('/webhook', async (req, res) => {
     const isGroup = chatType === 'group' || chatType === 'supergroup';
     const isPrivate = chatType === 'private';
 
-    if (isChannel && !allowedChannels.includes(chatId.toString())) {
-        logToAdmin(`Канал ${chatId} не в списке разрешённых`);
-        return;
+    if (isChannel) {
+        if (!allowedChannels.includes(chatId.toString())) {
+            logToAdmin(`❌ Канал ${chatId} не в списке разрешённых (allowedChannels: ${JSON.stringify(allowedChannels)})`);
+            return;
+        } else {
+            logToAdmin(`✅ Канал ${chatId} разрешён`);
+        }
     }
-    if (isGroup && !allowedGroups.includes(chatId.toString())) {
-        logToAdmin(`Группа ${chatId} не в списке разрешённых`);
-        return;
+    if (isGroup) {
+        if (!allowedGroups.includes(chatId.toString())) {
+            logToAdmin(`❌ Группа ${chatId} не в списке разрешённых (allowedGroups: ${JSON.stringify(allowedGroups)})`);
+            return;
+        } else {
+            logToAdmin(`✅ Группа ${chatId} разрешена`);
+        }
     }
 
-    const username = message.from?.username;
-    const userId = message.from?.id;
     const isAdmin = (adminChatId && userId === adminChatId);
     const isAllowedUser = (username && allowedUsernames.includes(username));
 
+    // Для каналов: анонимные посты пропускаем, иначе проверяем автора
     if (isChannel && !message.from) {
-        logToAdmin(`Анонимный пост в канале ${chatId}, обрабатываем`);
+        logToAdmin(`ℹ️ Анонимный пост в канале ${chatId}, обрабатываем`);
     } else {
         if (!isAdmin && !isAllowedUser) {
-            logToAdmin(`Пользователь ${username || 'без username'} (ID: ${userId}) не разрешён`);
+            logToAdmin(`❌ Пользователь ${username} (ID: ${userId}) не разрешён (allowedUsernames: ${JSON.stringify(allowedUsernames)})`);
             return;
+        } else {
+            logToAdmin(`✅ Пользователь ${username} разрешён`);
         }
     }
 
     // === ОБРАБОТКА ССЫЛОК ===
     const urlMatch = text.match(/https?:\/\/[^\s]+/);
-    if (!urlMatch) return;
+    if (!urlMatch) {
+        logToAdmin(`ℹ️ Ссылка не найдена в тексте`);
+        return;
+    }
 
     const originalUrl = urlMatch[0];
-    logToAdmin(`Исходный URL: ${originalUrl}`);
+    logToAdmin(`🔗 Исходный URL: ${originalUrl}`);
 
     try {
         const hostname = new URL(originalUrl).hostname;
         if (!allowedDomains.includes(hostname)) {
-            logToAdmin(`Домен ${hostname} не разрешён`);
+            logToAdmin(`❌ Домен ${hostname} не разрешён (allowedDomains: ${JSON.stringify(allowedDomains)})`);
             return;
+        } else {
+            logToAdmin(`✅ Домен ${hostname} разрешён`);
         }
     } catch (e) {
         console.error('Ошибка парсинга URL:', e);
@@ -300,6 +321,7 @@ app.post('/webhook', async (req, res) => {
         tasks.set(taskId, { ...params, createdAt: Date.now() });
 
         scheduleSelfPing(params);
+        logToAdmin(`✅ Задача создана: ${taskId}`);
     } catch (e) {
         console.error('Ошибка в вебхуке:', e);
         await bot.sendMessage(chatId, 'Произошла ошибка при обработке ссылки.');
