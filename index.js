@@ -14,18 +14,13 @@ const allowedGroups = [];     // замените на реальные ID гр�
 const allowedChannelsNoDomainCheck = ['-1001390761594']; // замените
 const allowedGroupsNoDomainCheck = [''];   // замените
 
-// ===== ФЛАГ ЛОГИРОВАНИЯ ССЫЛОК =====
-const LOG_URLS = true;   // true – выводить ссылки в лог, false – не выводить
 
-// ===== ВЕРСИЯ =====
-const VERSION = '1.0.3';
-
-// ===== КОНФИГУРАЦИЯ (переменные окружения) =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_USERNAME_MASK = process.env.ADMIN_USERNAME_MASK || 'd*n';
 const YANDEX_TOKEN = process.env.YANDEX_TOKEN;
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_URL;
 const PORT = process.env.PORT || 3000;
+const DIAGNOSTIC_MODE = process.env.DIAGNOSTIC_ENABLED === 'true' || false; // по умолчанию выключен
 
 // Параметры проверки готовности контента
 const ACTIVE_INTERVAL = 3000;
@@ -45,12 +40,30 @@ const bot = new TelegramBot(BOT_TOKEN);
 const tasks = new Map();
 let adminChatId = null;
 
-// ===== ЛОГИРОВАНИЕ В КОНСОЛЬ И В ЛИЧКУ АДМИНА =====
+// ===== ЛОГИРОВАНИЕ В КОНСОЛЬ И В ЛИЧКУ АДМИНА (с учётом флага диагностики) =====
 function logToAdmin(message) {
-    console.log(message);
-    if (adminChatId) {
-        bot.sendMessage(adminChatId, `📝 ${message}`).catch(() => {});
+    // Список сообщений, которые выводятся всегда (даже при выключенной диагностике)
+    const alwaysShow = [
+        'Self-ping failed:',
+        'Недостаточно параметров в /process',
+        'Дежурный пинг не удался:',
+        'RENDER_URL не определён, вебхук не может быть установлен',
+        'Ошибка установки вебхука:'
+    ];
+    const isAlways = alwaysShow.some(prefix => message.includes(prefix));
+    
+    if (isAlways) {
+        console.log(message);
+        if (adminChatId) {
+            bot.sendMessage(adminChatId, `📝 ${message}`).catch(() => {});
+        }
+    } else if (DIAGNOSTIC_MODE) {
+        console.log(message);
+        if (adminChatId) {
+            bot.sendMessage(adminChatId, `📝 ${message}`).catch(() => {});
+        }
     }
+    // Если диагностика выключена и сообщение не в исключениях — игнорируем
 }
 
 // ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
@@ -63,6 +76,7 @@ function isUsernameMatchMask(username) {
 }
 
 async function notifyAdmin(message) {
+    // Критические ошибки отправляем админу всегда (без флага)
     if (!adminChatId) {
         console.warn('Администратор ещё не назначен, уведомление не отправлено:', message);
         return;
@@ -109,7 +123,6 @@ async function extractTextFromYaRu(url) {
         const originLink = $('a').filter((i, el) => $(el).text().includes('Перейти на оригинал')).attr('href') || '';
         const fullText = $('body').text();
         const { title, content } = parseContent(fullText);
-        // Возвращаем originLink, но не отправляем пользователю
         return { status: 200, title, content, origin: originLink };
     } catch (e) {
         return { status: 500, title: 'Error', content: e.message, origin: '' };
@@ -220,7 +233,7 @@ app.post('/webhook', async (req, res) => {
     const username = message.from?.username || 'без username';
     const userId = message.from?.id;
 
-    // === ДИАГНОСТИКА ВСЕХ ВХОДЯЩИХ ВЕБХУКОВ ===
+    // === ДИАГНОСТИКА ВСЕХ ВХОДЯЩИХ ВЕБХУКОВ (под флагом) ===
     logToAdmin(`📥 Вебхук: chatId=${chatId}, type=${chatType}, user=${username}, text=${text.substring(0, 80)}${text.length > 80 ? '...' : ''}`);
 
     // Назначение администратора (только в личке)
@@ -342,7 +355,11 @@ app.get('/process', async (req, res) => {
 
     const { shortUrl, chatId, messageId, attempt, phase } = req.query;
     if (!shortUrl || !chatId || !messageId) {
+        // Это сообщение выводится всегда (входит в список исключений)
         console.warn('Недостаточно параметров в /process');
+        if (adminChatId) {
+            bot.sendMessage(adminChatId, '⚠️ Недостаточно параметров в /process').catch(() => {});
+        }
         return;
     }
 
@@ -449,11 +466,12 @@ app.get('/ping', (req, res) => {
 
 app.get('/status', (req, res) => {
     res.json({
-        version: VERSION,
+        version: '1.0.4',
         uptime: process.uptime(),
         tasksCount: tasks.size,
         activeTasks: Array.from(tasks.keys()),
-        adminSet: !!adminChatId
+        adminSet: !!adminChatId,
+        diagnosticMode: DIAGNOSTIC_MODE
     });
 });
 
@@ -498,9 +516,10 @@ async function setWebhook(url) {
 }
 
 app.listen(PORT, async () => {
-    console.log(`Бот запущен, версия ${VERSION}, порт ${PORT}`);
+    console.log(`Бот запущен, версия 1.0.4, порт ${PORT}`);
     const webhookUrl = `${RENDER_URL}/webhook`;
     await setWebhook(webhookUrl);
     startPingScheduler();
     console.log(`Ожидание первого сообщения от пользователя с маской "${ADMIN_USERNAME_MASK}"`);
+    console.log(`Диагностический режим: ${DIAGNOSTIC_MODE ? 'ВКЛЮЧЁН' : 'ВЫКЛЮЧЕН'}`);
 });
