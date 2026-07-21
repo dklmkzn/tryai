@@ -208,9 +208,11 @@ function scheduleSelfPing(params) {
 app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 
-    const { message } = req.body;
+    // === УНИВЕРСАЛЬНАЯ ОБРАБОТКА: message И channel_post ===
+    const update = req.body;
+    const message = update.message || update.channel_post;
     if (!message || !message.text) {
-        // Логируем пустые или не текстовые сообщения (опционально)
+        // Если это не сообщение и не пост в канале — игнорируем
         return;
     }
 
