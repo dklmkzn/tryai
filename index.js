@@ -17,7 +17,8 @@ const allowedGroupsNoDomainCheck = [''];   // замените
 // ===== ФЛАГ ЛОГИРОВАНИЯ ССЫЛОК =====
 const LOG_URLS = true;   // true – выводить ссылки в лог, false – не выводить
 
-console.log(`версия: 0.0.37`);
+// index.js — версия 0.0.37.1
+console.log(`версия: 0.0.37.1`);
 
 // ===== КОНФИГУРАЦИЯ =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -101,6 +102,10 @@ async function extractTextFromYaRu(url) {
 }
 
 function parseContent(fullText) {
+    if (LOG_URLS) {
+        console.log('Текст ДО очистки:', fullText.substring(0, 500) + '...');
+    }
+
     const isYandexGptSummary = /YandexGPT\s+краткий пересказ статьи от нейросети/im.test(fullText);
     const startMarker = /Пересказ сделан (.{0,50}?)Обновить/s;
     const startMatch = fullText.match(startMarker);
@@ -133,10 +138,12 @@ function parseContent(fullText) {
         .replace(/Для улучшения качества[\s\S]*$/im, '')
         .trim();
 
-    // Удаляем фразу "Данный формат временно недоступен для этого видео"
-    console.log(`текст: ${cleanText}`);
-    cleanText = cleanText.replace(/Данный формат временно недоступен для этого видео/g, '');
-    console.log(`повторно текст: ${cleanText}`);
+    // Удаляем фразу "Данный формат временно недоступен для этого видео" (регистронезависимо)
+    cleanText = cleanText.replace(/\s*Данный формат временно недоступен для этого видео\s*/gi, '');
+
+    if (LOG_URLS) {
+        console.log('Текст ПОСЛЕ очистки:', cleanText.substring(0, 500) + '...');
+    }
 
     return { title: titleText, content: cleanText };
 }
@@ -188,7 +195,6 @@ function formatNews(title, content) {
 
 async function sendContentToUser(chatId, content, replyToMessageId, keyboard) {
     const parts = formatNews(content.title, content.content);
-    // Первую часть отправляем как ответ на исходное сообщение или редактируем его
     if (replyToMessageId) {
         await bot.editMessageText(parts[0], {
             chat_id: chatId,
@@ -202,7 +208,6 @@ async function sendContentToUser(chatId, content, replyToMessageId, keyboard) {
             reply_markup: keyboard
         });
     }
-    // Остальные части – как новые сообщения
     if (parts.length > 1) {
         for (let i = 1; i < parts.length; i++) {
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -212,7 +217,6 @@ async function sendContentToUser(chatId, content, replyToMessageId, keyboard) {
             });
         }
     }
-    // Оригинал больше не отправляем
 }
 
 function scheduleSelfPing(params) {
@@ -229,6 +233,15 @@ app.post('/webhook', async (req, res) => {
 
     const { message } = req.body;
     if (!message || !message.text) return;
+
+    if (LOG_URLS) {
+        console.log('=== ВХОДЯЩЕЕ СООБЩЕНИЕ ===');
+        console.log('Текст:', message.text);
+        console.log('Chat ID:', message.chat.id);
+        console.log('Chat Type:', message.chat.type);
+        console.log('Отправитель:', message.from ? `${message.from.username || 'без username'} (ID: ${message.from.id})` : 'аноним');
+        console.log('=========================');
+    }
 
     const chatId = message.chat.id;
     const chatType = message.chat.type;
@@ -254,13 +267,19 @@ app.post('/webhook', async (req, res) => {
     const isGroup = chatType === 'group' || chatType === 'supergroup';
     const isPrivate = chatType === 'private';
 
-    if (isChannel && !allowedChannels.includes(chatId.toString())) {
-        console.log(`Канал ${chatId} не разрешён`);
-        return;
+    if (isChannel) {
+        if (!allowedChannels.includes(chatId.toString())) {
+            if (LOG_URLS) console.log(`❌ Канал ${chatId} не разрешён`);
+            return;
+        }
+        if (LOG_URLS) console.log(`✅ Канал ${chatId} разрешён`);
     }
-    if (isGroup && !allowedGroups.includes(chatId.toString())) {
-        console.log(`Группа ${chatId} не разрешена`);
-        return;
+    if (isGroup) {
+        if (!allowedGroups.includes(chatId.toString())) {
+            if (LOG_URLS) console.log(`❌ Группа ${chatId} не разрешена`);
+            return;
+        }
+        if (LOG_URLS) console.log(`✅ Группа ${chatId} разрешена`);
     }
 
     const username = message.from?.username;
@@ -269,17 +288,21 @@ app.post('/webhook', async (req, res) => {
     const isAllowedUser = (username && allowedUsernames.includes(username));
 
     if (isChannel && !message.from) {
-        console.log(`Анонимный пост в канале ${chatId}`);
+        if (LOG_URLS) console.log(`✅ Анонимный пост в канале ${chatId} разрешён`);
     } else {
         if (!isAdmin && !isAllowedUser) {
-            console.log(`Пользователь ${username || 'без username'} не разрешён`);
+            if (LOG_URLS) console.log(`❌ Пользователь ${username || 'без username'} не разрешён`);
             return;
         }
+        if (LOG_URLS) console.log(`✅ Пользователь ${username || 'без username'} разрешён`);
     }
 
     // === ОБРАБОТКА ССЫЛОК ===
     const urlMatch = text.match(/https?:\/\/[^\s]+/);
-    if (!urlMatch) return;
+    if (!urlMatch) {
+        if (LOG_URLS) console.log('ℹ️ Ссылка не найдена');
+        return;
+    }
 
     const originalUrl = urlMatch[0];
 
@@ -296,21 +319,26 @@ app.post('/webhook', async (req, res) => {
     let checkDomain = true;
     if (isPrivate) {
         checkDomain = false;
+        if (LOG_URLS) console.log('ℹ️ Личка – домен не проверяем');
     } else if (onlyUrl) {
         checkDomain = false;
+        if (LOG_URLS) console.log('ℹ️ Сообщение только ссылка – домен не проверяем');
     } else if (isChannel && allowedChannelsNoDomainCheck.includes(chatId.toString())) {
         checkDomain = false;
+        if (LOG_URLS) console.log(`ℹ️ Канал ${chatId} в исключении – домен не проверяем`);
     } else if (isGroup && allowedGroupsNoDomainCheck.includes(chatId.toString())) {
         checkDomain = false;
+        if (LOG_URLS) console.log(`ℹ️ Группа ${chatId} в исключении – домен не проверяем`);
     }
 
     if (checkDomain) {
         try {
             const hostname = new URL(originalUrl).hostname;
             if (!allowedDomains.includes(hostname)) {
-                console.log(`Домен ${hostname} не разрешён в чате ${chatId}`);
+                if (LOG_URLS) console.log(`❌ Домен ${hostname} не разрешён в чате ${chatId}`);
                 return;
             }
+            if (LOG_URLS) console.log(`✅ Домен ${hostname} разрешён`);
         } catch (e) {
             console.error('Ошибка парсинга URL:', e);
             return;
@@ -351,14 +379,12 @@ app.post('/webhook', async (req, res) => {
             console.log(`Короткая ссылка: ${shortUrl}`);
         }
 
-        // === ОБНОВЛЕНИЕ СООБЩЕНИЯ: кнопка с короткой ссылкой ===
         const keyboard = {
             inline_keyboard: [
                 [{ text: 'Открыть пересказ на 300.ya.ru', url: shortUrl }]
             ]
         };
 
-        // Если это ссылка уже на 300.ya.ru, то сразу начинаем ожидание контента
         if (originalUrl.includes('300.ya.ru')) {
             await bot.editMessageText('Формируется текст новости...', {
                 chat_id: chatId,
@@ -377,14 +403,12 @@ app.post('/webhook', async (req, res) => {
             return;
         }
 
-        // Для обычных ссылок – сначала "Формируется текст новости..."
         await bot.editMessageText('Формируется текст новости...', {
             chat_id: chatId,
             message_id: sentMsg.message_id,
             reply_markup: keyboard
         });
 
-        // Запускаем асинхронную проверку готовности контента
         const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
         const params = {
             shortUrl,
@@ -409,7 +433,6 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// ===== ОБРАБОТЧИК SELF-PING =====
 app.get('/process', async (req, res) => {
     res.sendStatus(200);
 
@@ -432,7 +455,6 @@ app.get('/process', async (req, res) => {
                 ]
             };
             await sendContentToUser(chatId, content, msgId, keyboard);
-            // Удаляем задачу
             for (const [key, val] of tasks.entries()) {
                 if (val.shortUrl === shortUrl && val.chatId === chatId) {
                     tasks.delete(key);
@@ -445,7 +467,6 @@ app.get('/process', async (req, res) => {
         console.error('Ошибка при проверке контента:', e);
     }
 
-    // Контент не готов – определяем следующую попытку
     let nextAttempt = attemptNum + 1;
     let nextPhase = currentPhase;
 
@@ -482,7 +503,6 @@ app.get('/process', async (req, res) => {
         phase: nextPhase,
         originalMessageId: msgId
     };
-    // Обновляем задачу в Map
     for (const [key, val] of tasks.entries()) {
         if (val.shortUrl === shortUrl && val.chatId === chatId) {
             tasks.set(key, { ...params, updatedAt: Date.now() });
@@ -494,7 +514,6 @@ app.get('/process', async (req, res) => {
     }, interval);
 });
 
-// ===== ФУНКЦИЯ ОЖИДАНИЯ СТАБИЛИЗАЦИИ (для 300.ya.ru) =====
 async function waitForContentStabilization(url, maxAttempts = 20, interval = 5) {
     let previousContent = null;
     let attempt = 0;
@@ -535,7 +554,6 @@ async function waitForContentStabilization(url, maxAttempts = 20, interval = 5) 
     return previousContent ? await extractTextFromYaRu(url) : null;
 }
 
-// ===== ПИНГ И СТАТУС =====
 app.get('/ping', (req, res) => {
     res.sendStatus(200);
 });
