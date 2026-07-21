@@ -28,12 +28,6 @@ const MAX_LONG_ATTEMPTS = 20;          // ещё 20 минут
 const PING_MIN_INTERVAL = 10 * 60 * 1000;
 const PING_MAX_INTERVAL = 13 * 60 * 1000;
 
-// ===== РАЗРЕШЁННЫЕ ДОМЕНЫ, ПОЛЬЗОВАТЕЛИ (username), КАНАЛЫ И ГРУППЫ (ID) =====
-const allowedDomains = ['nplus1.ru', 'naked-science.ru', '300.ya.ru'];
-const allowedUsernames = []; // пока пусто — только админ имеет доступ
-const allowedChannels = ['-1001234567890'];   // замените на реальные ID каналов
-const allowedGroups = ['-1009876543210'];     // замените на реальные ID групп
-
 // ===== ИНИЦИАЛИЗАЦИЯ =====
 const app = express();
 app.use(express.json());
