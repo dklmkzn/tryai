@@ -252,6 +252,8 @@ app.post('/webhook', async (req, res) => {
         }
     }
 
+    console.log(`Исходный URL: ${originalUrl}`);
+    
     // Обработка ссылок
     const urlMatch = text.match(/https?:\/\/[^\s]+/);
     if (!urlMatch) return;
