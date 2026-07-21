@@ -11,6 +11,10 @@ const allowedUsernames = []; // пока пусто — только админ 
 const allowedChannels = ['-1001390761594', '-1002753237331', '-1002872429524', '-1002507851276'];   // замените на реальные ID каналов
 const allowedGroups = [];     // замените на реальные ID групп
 
+// Списки исключений для проверки домена (в этих каналах/группах домен не проверяем даже при наличии текста)
+const allowedChannelsNoDomainCheck = ['-1001390761594']; // замените
+const allowedGroupsNoDomainCheck = [''];   // замените
+
 // ===== КОНФИГУРАЦИЯ (переменные окружения) =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_USERNAME_MASK = process.env.ADMIN_USERNAME_MASK || 'd*n'; // первая и последняя буква
@@ -227,7 +231,7 @@ app.post('/webhook', async (req, res) => {
         const username = message.from?.username;
         if (username && isUsernameMatchMask(username)) {
             adminChatId = chatId;
-            console.log(`Администратор назначен: ${username} (chat_id: ${adminChatId})`);
+            console.log(`Администратор назначен (chat_id: ${adminChatId})`);
             await bot.sendMessage(adminChatId, '✅ Вы назначены администратором бота. Уведомления об ошибках будут приходить сюда.');
         } else {
             if (username) {
@@ -272,18 +276,44 @@ app.post('/webhook', async (req, res) => {
 
     const originalUrl = urlMatch[0];
 
-    // Проверка домена
-    try {
-        const hostname = new URL(originalUrl).hostname;
-        if (!allowedDomains.includes(hostname)) {
-            console.log(`Домен ${hostname} не разрешён`);
-            return;
-        }
-    } catch (e) {
-        console.error('Ошибка парсинга URL:', e);
-        return;
+    // Проверяем, состоит ли сообщение только из ссылки (без другого текста)
+    const urlStart = text.indexOf(originalUrl);
+    const beforeUrl = text.substring(0, urlStart).trim();
+    const afterUrl = text.substring(urlStart + originalUrl.length).trim();
+    const onlyUrl = (beforeUrl === '' && afterUrl === '');
+
+    // Определяем, нужно ли проверять домен
+    let checkDomain = true;
+
+    if (isPrivate) {
+        // В личке домен не проверяем
+        checkDomain = false;
+    } else if (onlyUrl) {
+        // Если сообщение только ссылка – домен не проверяем (в каналах и группах)
+        checkDomain = false;
+    } else if (isChannel && allowedChannelsNoDomainCheck.includes(chatId.toString())) {
+        // Канал в списке исключений – не проверяем
+        checkDomain = false;
+    } else if (isGroup && allowedGroupsNoDomainCheck.includes(chatId.toString())) {
+        // Группа в списке исключений – не проверяем
+        checkDomain = false;
     }
 
+    // Если нужно проверить домен – делаем это
+    if (checkDomain) {
+        try {
+            const hostname = new URL(originalUrl).hostname;
+            if (!allowedDomains.includes(hostname)) {
+                console.log(`Домен ${hostname} не разрешён в чате ${chatId}`);
+                return;
+            }
+        } catch (e) {
+            console.error('Ошибка парсинга URL:', e);
+            return;
+        }
+    }
+
+    // === ПОЛУЧЕНИЕ КОРОТКОЙ ССЫЛКИ И ОБРАБОТКА ===
     try {
         const shortResult = await getShortUrl(originalUrl);
         if (shortResult.status === 'error') {
@@ -432,7 +462,7 @@ async function setWebhook(url) {
     try {
         const response = await axios.get(apiUrl);
         if (response.data && response.data.ok) {
-            console.log(`Вебхук успешно установлен на ${url}`);
+            console.log(`Вебхук установлен на ${url}`);
             return true;
         } else {
             console.error('Ошибка установки вебхука:', response.data.description || 'неизвестная ошибка');
@@ -449,5 +479,5 @@ app.listen(PORT, async () => {
     const webhookUrl = `${RENDER_URL}/webhook`;
     await setWebhook(webhookUrl);
     startPingScheduler();
-    console.log(`Ожидание первого сообщения от пользователя с username, соответствующим маске "${ADMIN_USERNAME_MASK}"`);
+    console.log(`Ожидание первого сообщения от пользователя с маской "${ADMIN_USERNAME_MASK}"`);
 });
