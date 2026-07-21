@@ -17,7 +17,7 @@ const allowedGroupsNoDomainCheck = [''];   // замените
 // ===== ФЛАГ ЛОГИРОВАНИЯ ССЫЛОК =====
 const LOG_URLS = true;   // true – выводить ссылки в лог, false – не выводить
 
-console.log(`версия: 0.0.36`);
+console.log(`версия: 0.0.37`);
 
 // ===== КОНФИГУРАЦИЯ =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
