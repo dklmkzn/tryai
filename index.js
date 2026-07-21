@@ -14,6 +14,9 @@ const allowedGroups = [];     // замените на реальные ID гр�
 const allowedChannelsNoDomainCheck = ['-1001390761594']; // замените
 const allowedGroupsNoDomainCheck = [''];   // замените
 
+// ===== ФЛАГ ЛОГИРОВАНИЯ ССЫЛОК =====
+const LOG_URLS = true;   // true – выводить ссылки в лог, false – не выводить
+
 // ===== КОНФИГУРАЦИЯ =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_USERNAME_MASK = process.env.ADMIN_USERNAME_MASK || 'd*n';
@@ -121,12 +124,15 @@ function parseContent(fullText) {
         }
     }
 
-    const cleanText = contentText
+    let cleanText = contentText
         .replace(/\s{2,}/g, '\n')
         .replace(/(\n)(?![•\s])/g, '\n\n')
         .replace(/\n{3,}/g, '\n\n')
         .replace(/Для улучшения качества[\s\S]*$/im, '')
         .trim();
+
+    // Удаляем фразу "Данный формат временно недоступен для этого видео"
+    cleanText = cleanText.replace(/Данный формат временно недоступен для этого видео/g, '');
 
     return { title: titleText, content: cleanText };
 }
@@ -202,9 +208,7 @@ async function sendContentToUser(chatId, content, replyToMessageId, keyboard) {
             });
         }
     }
-    if (content.origin) {
-        await bot.sendMessage(chatId, `🔗 Оригинал: ${content.origin}`);
-    }
+    // Оригинал больше не отправляем
 }
 
 function scheduleSelfPing(params) {
@@ -275,7 +279,11 @@ app.post('/webhook', async (req, res) => {
 
     const originalUrl = urlMatch[0];
 
-    // Проверка домена (как обсуждали)
+    if (LOG_URLS) {
+        console.log(`Исходная ссылка: ${originalUrl}`);
+    }
+
+    // Проверка домена
     const urlStart = text.indexOf(originalUrl);
     const beforeUrl = text.substring(0, urlStart).trim();
     const afterUrl = text.substring(urlStart + originalUrl.length).trim();
@@ -308,7 +316,6 @@ app.post('/webhook', async (req, res) => {
     // === ОТПРАВКА ПЕРВОГО СООБЩЕНИЯ ===
     let sentMsg;
     try {
-        // Временно используем кнопку на главную 300.ya.ru
         const tempKeyboard = {
             inline_keyboard: [
                 [{ text: 'Открыть пересказ на 300.ya.ru', url: 'https://300.ya.ru' }]
@@ -336,6 +343,10 @@ app.post('/webhook', async (req, res) => {
         }
         const shortUrl = shortResult.sharing_url;
 
+        if (LOG_URLS) {
+            console.log(`Короткая ссылка: ${shortUrl}`);
+        }
+
         // === ОБНОВЛЕНИЕ СООБЩЕНИЯ: кнопка с короткой ссылкой ===
         const keyboard = {
             inline_keyboard: [
@@ -350,15 +361,9 @@ app.post('/webhook', async (req, res) => {
                 message_id: sentMsg.message_id,
                 reply_markup: keyboard
             });
-            // Запускаем ожидание стабилизации (как в оригинале)
             const finalResult = await waitForContentStabilization(shortUrl, 10, 5);
             if (finalResult && finalResult.status === 200 && finalResult.content) {
-                // Отправляем контент, редактируя исходное сообщение
                 await sendContentToUser(chatId, finalResult, sentMsg.message_id, keyboard);
-                // Если есть origin, отправляем отдельно
-                if (finalResult.origin) {
-                    await bot.sendMessage(chatId, `🔗 Оригинал: ${finalResult.origin}`);
-                }
             } else {
                 await bot.editMessageText('Не удалось получить контент. Попробуйте позже.', {
                     chat_id: chatId,
@@ -375,19 +380,17 @@ app.post('/webhook', async (req, res) => {
             reply_markup: keyboard
         });
 
-        // Запускаем асинхронную проверку готовности контента (как в оригинале)
-        // Создаём задачу и запускаем self-ping
+        // Запускаем асинхронную проверку готовности контента
         const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
         const params = {
             shortUrl,
             chatId,
             attempt: 1,
             phase: 'active',
-            originalMessageId: sentMsg.message_id  // сохраняем для редактирования
+            originalMessageId: sentMsg.message_id
         };
         tasks.set(taskId, { ...params, createdAt: Date.now() });
 
-        // Первая проверка через 3 секунды
         setTimeout(() => {
             scheduleSelfPing(params);
         }, 3000);
@@ -419,7 +422,6 @@ app.get('/process', async (req, res) => {
     try {
         const content = await extractTextFromYaRu(shortUrl);
         if (content.status === 200 && content.content && content.content.length > 100) {
-            // Контент готов – редактируем исходное сообщение
             const keyboard = {
                 inline_keyboard: [
                     [{ text: 'Открыть пересказ на 300.ya.ru', url: shortUrl }]
@@ -452,7 +454,6 @@ app.get('/process', async (req, res) => {
 
     if (currentPhase === 'long') {
         if (nextAttempt > MAX_LONG_ATTEMPTS) {
-            // Ошибка – редактируем исходное сообщение
             await bot.editMessageText('❌ Не удалось получить текст. Попробуйте позже.', {
                 chat_id: chatId,
                 message_id: msgId
