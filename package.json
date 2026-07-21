@@ -1,6 +1,11 @@
 {
   "name": "telegram-bot",
   "version": "1.0.0",
+  "description": "Telegram bot for summarizing news via Yandex 300.ya.ru",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
   "dependencies": {
     "express": "^4.18.2",
     "axios": "^1.6.0",
