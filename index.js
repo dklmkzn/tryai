@@ -1,9 +1,3 @@
-// index.js — полная финальная версия
-const express = require('express');
-const axios = require('axios');
-const TelegramBot = require('node-telegram-bot-api');
-const cheerio = require('cheerio');
-
 // ===== РАЗРЕШЁННЫЕ ДОМЕНЫ, ПОЛЬЗОВАТЕЛИ (username), КАНАЛЫ И ГРУППЫ (ID) =====
 const allowedDomains = ['nplus1.ru', 'naked-science.ru', '300.ya.ru'];
 const allowedUsernames = []; // пока пусто — только админ имеет доступ
@@ -14,13 +8,21 @@ const allowedGroups = [];     // замените на реальные ID гр�
 const allowedChannelsNoDomainCheck = ['-1001390761594']; // замените
 const allowedGroupsNoDomainCheck = [''];   // замените
 
+// index.js — версия 1.0.5
 
+// ===== ИМПОРТЫ =====
+const express = require('express');
+const axios = require('axios');
+const TelegramBot = require('node-telegram-bot-api');
+const cheerio = require('cheerio');
+
+// ===== ОСТАЛЬНАЯ КОНФИГУРАЦИЯ (переменные окружения и параметры) =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_USERNAME_MASK = process.env.ADMIN_USERNAME_MASK || 'd*n';
 const YANDEX_TOKEN = process.env.YANDEX_TOKEN;
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_URL;
 const PORT = process.env.PORT || 3000;
-const DIAGNOSTIC_MODE = process.env.DIAGNOSTIC_ENABLED === 'true' || false; // по умолчанию выключен
+const DIAGNOSTIC_MODE = process.env.DIAGNOSTIC_ENABLED === 'true' || false;
 
 // Параметры проверки готовности контента
 const ACTIVE_INTERVAL = 3000;
@@ -40,9 +42,8 @@ const bot = new TelegramBot(BOT_TOKEN);
 const tasks = new Map();
 let adminChatId = null;
 
-// ===== ЛОГИРОВАНИЕ В КОНСОЛЬ И В ЛИЧКУ АДМИНА (с учётом флага диагностики) =====
+// ===== ЛОГИРОВАНИЕ (с учётом флага диагностики) =====
 function logToAdmin(message) {
-    // Список сообщений, которые выводятся всегда (даже при выключенной диагностике)
     const alwaysShow = [
         'Self-ping failed:',
         'Недостаточно параметров в /process',
@@ -51,19 +52,13 @@ function logToAdmin(message) {
         'Ошибка установки вебхука:'
     ];
     const isAlways = alwaysShow.some(prefix => message.includes(prefix));
-    
     if (isAlways) {
         console.log(message);
-        if (adminChatId) {
-            bot.sendMessage(adminChatId, `📝 ${message}`).catch(() => {});
-        }
+        if (adminChatId) bot.sendMessage(adminChatId, `📝 ${message}`).catch(() => {});
     } else if (DIAGNOSTIC_MODE) {
         console.log(message);
-        if (adminChatId) {
-            bot.sendMessage(adminChatId, `📝 ${message}`).catch(() => {});
-        }
+        if (adminChatId) bot.sendMessage(adminChatId, `📝 ${message}`).catch(() => {});
     }
-    // Если диагностика выключена и сообщение не в исключениях — игнорируем
 }
 
 // ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
@@ -76,7 +71,6 @@ function isUsernameMatchMask(username) {
 }
 
 async function notifyAdmin(message) {
-    // Критические ошибки отправляем админу всегда (без флага)
     if (!adminChatId) {
         console.warn('Администратор ещё не назначен, уведомление не отправлено:', message);
         return;
@@ -155,12 +149,15 @@ function parseContent(fullText) {
         }
     }
 
-    const cleanText = contentText
+    let cleanText = contentText
         .replace(/\s{2,}/g, '\n')
         .replace(/(\n)(?![•\s])/g, '\n\n')
         .replace(/\n{3,}/g, '\n\n')
         .replace(/Для улучшения качества[\s\S]*$/im, '')
         .trim();
+
+    // Удаляем строку "Данный формат временно недоступен для этого видео" (если есть)
+    cleanText = cleanText.replace(/Данный формат временно недоступен для этого видео/gi, '').trim();
 
     return { title: titleText, content: cleanText };
 }
@@ -222,7 +219,6 @@ function scheduleSelfPing(params) {
 app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 
-    // === УНИВЕРСАЛЬНАЯ ОБРАБОТКА: message И channel_post ===
     const update = req.body;
     const message = update.message || update.channel_post;
     if (!message || !message.text) return;
@@ -233,7 +229,6 @@ app.post('/webhook', async (req, res) => {
     const username = message.from?.username || 'без username';
     const userId = message.from?.id;
 
-    // === ДИАГНОСТИКА ВСЕХ ВХОДЯЩИХ ВЕБХУКОВ (под флагом) ===
     logToAdmin(`📥 Вебхук: chatId=${chatId}, type=${chatType}, user=${username}, text=${text.substring(0, 80)}${text.length > 80 ? '...' : ''}`);
 
     // Назначение администратора (только в личке)
@@ -327,10 +322,8 @@ app.post('/webhook', async (req, res) => {
         }
         const shortUrl = shortResult.sharing_url;
 
-        // Отправляем первое сообщение (будет отредактировано позже)
         const sentMsg = await bot.sendMessage(chatId, `✅ Ссылка на пересказ: ${shortUrl}\nТекст готовится, ожидайте...`);
 
-        // Создаём задачу с сохранением message_id
         const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
         const params = {
             shortUrl,
@@ -355,7 +348,6 @@ app.get('/process', async (req, res) => {
 
     const { shortUrl, chatId, messageId, attempt, phase } = req.query;
     if (!shortUrl || !chatId || !messageId) {
-        // Это сообщение выводится всегда (входит в список исключений)
         console.warn('Недостаточно параметров в /process');
         if (adminChatId) {
             bot.sendMessage(adminChatId, '⚠️ Недостаточно параметров в /process').catch(() => {});
@@ -369,21 +361,18 @@ app.get('/process', async (req, res) => {
     try {
         const content = await extractTextFromYaRu(shortUrl);
         if (content.status === 200 && content.content && content.content.length > 100) {
-            // Контент готов — редактируем первое сообщение
             const parts = formatNews(content.title, content.content);
             const keyboard = {
                 inline_keyboard: [
                     [{ text: 'Открыть пересказ на 300.ya.ru', url: shortUrl }]
                 ]
             };
-            // Редактируем первое сообщение первой частью
             await bot.editMessageText(parts[0], {
                 chat_id: chatId,
                 message_id: parseInt(messageId),
                 parse_mode: 'HTML',
                 reply_markup: keyboard
             });
-            // Отправляем дополнительные части
             if (parts.length > 1) {
                 for (let i = 1; i < parts.length; i++) {
                     await new Promise(resolve => setTimeout(resolve, 500));
@@ -393,11 +382,9 @@ app.get('/process', async (req, res) => {
                     });
                 }
             }
-            // НЕ отправляем origin пользователю — только в диагностику
             if (content.origin) {
                 logToAdmin(`🔗 Оригинал (не отправлен пользователю): ${content.origin}`);
             }
-            // Удаляем задачу
             for (const [key, val] of tasks.entries()) {
                 if (val.shortUrl === shortUrl && val.chatId === chatId) {
                     tasks.delete(key);
@@ -410,7 +397,6 @@ app.get('/process', async (req, res) => {
         console.error('Ошибка при проверке контента:', e);
     }
 
-    // Контент не готов — планируем следующую проверку
     let nextAttempt = attemptNum + 1;
     let nextPhase = currentPhase;
 
@@ -423,7 +409,6 @@ app.get('/process', async (req, res) => {
 
     if (currentPhase === 'long') {
         if (nextAttempt > MAX_LONG_ATTEMPTS) {
-            // Превышены все попытки — ошибка
             await bot.editMessageText('❌ Не удалось получить текст. Попробуйте позже.', {
                 chat_id: chatId,
                 message_id: parseInt(messageId)
@@ -441,7 +426,6 @@ app.get('/process', async (req, res) => {
 
     const interval = (nextPhase === 'active') ? ACTIVE_INTERVAL : LONG_INTERVAL;
 
-    // Сохраняем обновлённые параметры в Map
     const params = {
         shortUrl,
         chatId,
@@ -466,7 +450,7 @@ app.get('/ping', (req, res) => {
 
 app.get('/status', (req, res) => {
     res.json({
-        version: '1.0.4',
+        version: '1.0.5',
         uptime: process.uptime(),
         tasksCount: tasks.size,
         activeTasks: Array.from(tasks.keys()),
@@ -475,7 +459,7 @@ app.get('/status', (req, res) => {
     });
 });
 
-// ===== ЗАПУСК СЕРВЕРА И УСТАНОВКА ВЕБХУКА =====
+// ===== ЗАПУСК =====
 
 function startPingScheduler() {
     const randomInterval = () => {
@@ -516,7 +500,7 @@ async function setWebhook(url) {
 }
 
 app.listen(PORT, async () => {
-    console.log(`Бот запущен, версия 1.0.4, порт ${PORT}`);
+    console.log(`Бот запущен, версия 1.0.5, порт ${PORT}`);
     const webhookUrl = `${RENDER_URL}/webhook`;
     await setWebhook(webhookUrl);
     startPingScheduler();
