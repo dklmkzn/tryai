@@ -109,6 +109,7 @@ async function extractTextFromYaRu(url) {
         const originLink = $('a').filter((i, el) => $(el).text().includes('Перейти на оригинал')).attr('href') || '';
         const fullText = $('body').text();
         const { title, content } = parseContent(fullText);
+        // Возвращаем originLink, но не отправляем пользователю
         return { status: 200, title, content, origin: originLink };
     } catch (e) {
         return { status: 500, title: 'Error', content: e.message, origin: '' };
@@ -211,10 +212,7 @@ app.post('/webhook', async (req, res) => {
     // === УНИВЕРСАЛЬНАЯ ОБРАБОТКА: message И channel_post ===
     const update = req.body;
     const message = update.message || update.channel_post;
-    if (!message || !message.text) {
-        // Если это не сообщение и не пост в канале — игнорируем
-        return;
-    }
+    if (!message || !message.text) return;
 
     const chatId = message.chat.id;
     const chatType = message.chat.type;
@@ -264,7 +262,6 @@ app.post('/webhook', async (req, res) => {
     const isAdmin = (adminChatId && userId === adminChatId);
     const isAllowedUser = (username && allowedUsernames.includes(username));
 
-    // Для каналов: анонимные посты пропускаем, иначе проверяем автора
     if (isChannel && !message.from) {
         logToAdmin(`ℹ️ Анонимный пост в канале ${chatId}, обрабатываем`);
     } else {
@@ -286,17 +283,26 @@ app.post('/webhook', async (req, res) => {
     const originalUrl = urlMatch[0];
     logToAdmin(`🔗 Исходный URL: ${originalUrl}`);
 
-    try {
-        const hostname = new URL(originalUrl).hostname;
-        if (!allowedDomains.includes(hostname)) {
-            logToAdmin(`❌ Домен ${hostname} не разрешён (allowedDomains: ${JSON.stringify(allowedDomains)})`);
+    // === ПРОВЕРКА ДОМЕНА (если чат не в списке исключений) ===
+    const chatIdStr = chatId.toString();
+    const isDomainCheckSkipped = (isChannel && allowedChannelsNoDomainCheck.includes(chatIdStr)) ||
+                                 (isGroup && allowedGroupsNoDomainCheck.includes(chatIdStr));
+
+    if (!isDomainCheckSkipped) {
+        try {
+            const hostname = new URL(originalUrl).hostname;
+            if (!allowedDomains.includes(hostname)) {
+                logToAdmin(`❌ Домен ${hostname} не разрешён (allowedDomains: ${JSON.stringify(allowedDomains)})`);
+                return;
+            } else {
+                logToAdmin(`✅ Домен ${hostname} разрешён`);
+            }
+        } catch (e) {
+            console.error('Ошибка парсинга URL:', e);
             return;
-        } else {
-            logToAdmin(`✅ Домен ${hostname} разрешён`);
         }
-    } catch (e) {
-        console.error('Ошибка парсинга URL:', e);
-        return;
+    } else {
+        logToAdmin(`⏩ Проверка домена пропущена (чат в списке исключений)`);
     }
 
     try {
@@ -370,8 +376,9 @@ app.get('/process', async (req, res) => {
                     });
                 }
             }
+            // НЕ отправляем origin пользователю — только в диагностику
             if (content.origin) {
-                await bot.sendMessage(chatId, `🔗 Оригинал: ${content.origin}`);
+                logToAdmin(`🔗 Оригинал (не отправлен пользователю): ${content.origin}`);
             }
             // Удаляем задачу
             for (const [key, val] of tasks.entries()) {
