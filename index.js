@@ -18,7 +18,7 @@ const allowedGroupsNoDomainCheck = [''];   // замените
 const LOG_URLS = true;   // true – выводить ссылки в лог, false – не выводить
 
 // ===== ВЕРСИЯ =====
-const VERSION = '1.0.2';
+const VERSION = '1.0.3';
 
 // ===== КОНФИГУРАЦИЯ (переменные окружения) =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
