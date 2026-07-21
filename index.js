@@ -8,7 +8,7 @@ const cheerio = require('cheerio');
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_USERNAME_MASK = process.env.ADMIN_USERNAME_MASK || 'a*z'; // первая и последняя буква (например, 'a*z')
 const YANDEX_TOKEN = process.env.YANDEX_TOKEN;
-const RENDER_URL = process.env.RENDER_URL; // например, https://my-bot.onrender.com
+const RENDER_URL = process.env.RENDER_EXTERNAL_URL; // например, https://my-bot.onrender.com
 const PORT = process.env.PORT || 3000;
 
 // Параметры проверки готовности контента
