@@ -5,10 +5,10 @@ const express = require('express');
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
 
-// Подключаем модули с логикой
-const config = require('./config');          // переменные, applyConfig, extractConfig, loadConfigFromPinned
-const yandex = require('./yandex-utils');    // getShortUrl, extractTextFromYaRu, parseContent, formatNews
-const tgUtils = require('./telegram-utils'); // processUrl, scheduleSelfPing, logToAdmin, notifyAdmin, isUsernameMatchMask, normalizeId
+// Подключаем модули
+const config = require('./config');
+const yandex = require('./yandex-utils');
+const tgUtils = require('./telegram-utils');
 
 // ===== КОНФИГУРАЦИЯ (неизменяемые переменные окружения) =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -20,38 +20,14 @@ const app = express();
 app.use(express.json());
 
 const bot = new TelegramBot(BOT_TOKEN);
-const tasks = new Map(); // хранилище задач (self-ping)
-
-// Передаём зависимые объекты в модули (для доступа к bot, tasks, adminChatId и т.д.)
-// В нашем случае модули будут использовать глобальные переменные из этого файла,
-// но чтобы избежать цикличных зависимостей, мы передадим их через параметры или оставим в общем доступе.
-// В упрощённом варианте можно объявить их здесь и обращаться через require, но проще экспортировать функции, принимающие bot, tasks и т.п.
-
-// Однако для простоты я покажу вариант с общими глобальными переменными (adminChatId, tasks, bot).
-// Модули будут обращаться к ним через замыкание, если мы их экспортируем как функции, принимающие эти зависимости.
-// В данном файле мы инициализируем всё и передаём в функции.
-
-// ===== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ (используются в модулях) =====
+const tasks = new Map();
 let adminChatId = null;
 const greetedUsers = new Map();
 
-// ===== ПОДКЛЮЧЕНИЕ ФУНКЦИЙ ИЗ МОДУЛЕЙ =====
-// Чтобы не переопределять функции, мы будем использовать экспортированные функции, передавая им зависимости.
-// Вместо этого я просто скопирую сюда обновлённые функции из предыдущих ответов, но для чистоты разделения оставлю их в модулях.
-// Я перепишу логику так, чтобы модули экспортировали функции, которые используют глобальные переменные из этого файла (через замыкание).
-// Для простоты я сделаю так, чтобы в index.js были только эндпоинты и запуск, а все функции будут взяты из модулей.
-// Но поскольку мы ещё не создали файлы модулей, я временно вставлю код функций прямо сюда, но с комментариями, что они должны быть вынесены.
+// Устанавливаем YANDEX_TOKEN в yandex-utils (для случаев, когда он не передан в функции)
+yandex.setYandexToken(config.YANDEX_TOKEN);
 
-// В реальном проекте вы создадите файлы config.js, yandex-utils.js, telegram-utils.js и подключите их.
-// Здесь я даю index.js так, как будто модули уже есть.
-
-// Для демонстрации я приведу рабочий index.js, который использует модули (которые мы ещё не написали, но они будут позже).
-// Пока я просто покажу структуру.
-
-// ВАЖНО: это пример, но вы можете использовать его как основу.
-
-// ===== ЭНДПОИНТЫ =====
-
+// ===== ОБРАБОТЧИК ВЕБХУКА =====
 app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 
@@ -66,7 +42,6 @@ app.post('/webhook', async (req, res) => {
     const userId = message.from?.id;
     const chatIdStr = config.normalizeId(chatId);
 
-    // Логирование (используем функцию из модуля)
     tgUtils.logToAdmin(adminChatId, bot, `📥 Вебхук: chatId=${chatId} (норм: ${chatIdStr}), type=${chatType}, user=${username}`);
 
     // === ОБРАБОТКА ЛИЧНЫХ СООБЩЕНИЙ ===
@@ -79,6 +54,8 @@ app.post('/webhook', async (req, res) => {
                 if (arr) {
                     try {
                         config.applyConfig(arr);
+                        // Обновляем YANDEX_TOKEN в yandex-utils
+                        yandex.setYandexToken(config.YANDEX_TOKEN);
                         await bot.sendMessage(adminChatId, '✅ Конфиг обновлён.');
                     } catch (e) {
                         await bot.sendMessage(adminChatId, `❌ Ошибка применения конфига: ${e.message}`);
@@ -93,6 +70,7 @@ app.post('/webhook', async (req, res) => {
             if (text.startsWith('/reload')) {
                 const loaded = await config.loadConfigFromPinned(adminChatId, bot);
                 if (loaded) {
+                    yandex.setYandexToken(config.YANDEX_TOKEN);
                     await bot.sendMessage(adminChatId, '✅ Конфиг перезагружен из закреплённого сообщения.');
                 } else {
                     await bot.sendMessage(adminChatId, '❌ Не удалось загрузить конфиг. Убедитесь, что закреплённое сообщение содержит маркер [[[ ... ]]] и валидный массив.');
@@ -101,7 +79,16 @@ app.post('/webhook', async (req, res) => {
             }
 
             // Если это не команда и не конфиг — обрабатываем как ссылку (домен не проверяем)
-            await tgUtils.processUrl(chatId, text, null, { bot, tasks, adminChatId, logToAdmin: tgUtils.logToAdmin, notifyAdmin: tgUtils.notifyAdmin, getShortUrl: yandex.getShortUrl, scheduleSelfPing: tgUtils.scheduleSelfPing });
+            await tgUtils.processUrl(chatId, text, null, {
+                bot,
+                tasks,
+                adminChatId,
+                logToAdmin: tgUtils.logToAdmin,
+                notifyAdmin: tgUtils.notifyAdmin,
+                getShortUrl: yandex.getShortUrl,
+                scheduleSelfPing: tgUtils.scheduleSelfPing,
+                renderUrl: RENDER_URL
+            });
             return;
         }
 
@@ -122,6 +109,7 @@ app.post('/webhook', async (req, res) => {
                     let greeting = '✅ Вы назначились администратором бота.';
                     const configLoaded = await config.loadConfigFromPinned(adminChatId, bot);
                     if (configLoaded) {
+                        yandex.setYandexToken(config.YANDEX_TOKEN);
                         greeting += '\nКонфиг загружен из закреплённого сообщения.';
                     } else {
                         greeting += '\nКонфиг не найден, используются значения по умолчанию.';
@@ -204,7 +192,16 @@ app.post('/webhook', async (req, res) => {
     }
 
     // Вызываем обработку ссылки
-    await tgUtils.processUrl(chatId, text, editMessageId, { bot, tasks, adminChatId, logToAdmin: tgUtils.logToAdmin, notifyAdmin: tgUtils.notifyAdmin, getShortUrl: yandex.getShortUrl, scheduleSelfPing: tgUtils.scheduleSelfPing });
+    await tgUtils.processUrl(chatId, text, editMessageId, {
+        bot,
+        tasks,
+        adminChatId,
+        logToAdmin: tgUtils.logToAdmin,
+        notifyAdmin: tgUtils.notifyAdmin,
+        getShortUrl: yandex.getShortUrl,
+        scheduleSelfPing: tgUtils.scheduleSelfPing,
+        renderUrl: RENDER_URL
+    });
 });
 
 // ===== ЭНДПОИНТ /process =====
@@ -224,7 +221,7 @@ app.get('/process', async (req, res) => {
     const currentPhase = phase || 'active';
 
     try {
-        const content = await yandex.extractTextFromYaRu(shortUrl);
+        const content = await yandex.extractTextFromYaRu(shortUrl, config.YANDEX_TOKEN, tgUtils.logToAdmin, adminChatId, bot);
         if (content.status === 200 && content.content && content.content.length > 100) {
             const parts = yandex.formatNews(content.title, content.content);
             const keyboard = {
@@ -265,20 +262,16 @@ app.get('/process', async (req, res) => {
     // Если контент не готов, планируем следующую проверку
     let nextAttempt = attemptNum + 1;
     let nextPhase = currentPhase;
-    const MAX_ACTIVE_ATTEMPTS = config.MAX_ACTIVE_ATTEMPTS;
-    const MAX_LONG_ATTEMPTS = config.MAX_LONG_ATTEMPTS;
-    const ACTIVE_INTERVAL = config.ACTIVE_INTERVAL;
-    const LONG_INTERVAL = config.LONG_INTERVAL;
 
     if (currentPhase === 'active') {
-        if (nextAttempt > MAX_ACTIVE_ATTEMPTS) {
+        if (nextAttempt > config.MAX_ACTIVE_ATTEMPTS) {
             nextPhase = 'long';
             nextAttempt = 1;
         }
     }
 
     if (currentPhase === 'long') {
-        if (nextAttempt > MAX_LONG_ATTEMPTS) {
+        if (nextAttempt > config.MAX_LONG_ATTEMPTS) {
             await bot.editMessageText('❌ Не удалось получить текст. Попробуйте позже.', {
                 chat_id: chatId,
                 message_id: parseInt(messageId)
@@ -294,7 +287,7 @@ app.get('/process', async (req, res) => {
         }
     }
 
-    const interval = (nextPhase === 'active') ? ACTIVE_INTERVAL : LONG_INTERVAL;
+    const interval = (nextPhase === 'active') ? config.ACTIVE_INTERVAL : config.LONG_INTERVAL;
 
     const params = {
         shortUrl,
@@ -310,7 +303,7 @@ app.get('/process', async (req, res) => {
         }
     }
     setTimeout(() => {
-        tgUtils.scheduleSelfPing(params, { RENDER_URL });
+        tgUtils.scheduleSelfPing(params, RENDER_URL);
     }, interval);
 });
 
@@ -333,11 +326,9 @@ app.get('/status', (req, res) => {
 
 // ===== ЗАПУСК =====
 function startPingScheduler() {
-    const PING_MIN_INTERVAL = config.PING_MIN_INTERVAL;
-    const PING_MAX_INTERVAL = config.PING_MAX_INTERVAL;
     const randomInterval = () => {
-        const min = PING_MIN_INTERVAL;
-        const max = PING_MAX_INTERVAL;
+        const min = config.PING_MIN_INTERVAL;
+        const max = config.PING_MAX_INTERVAL;
         return Math.floor(Math.random() * (max - min + 1)) + min;
     };
 
