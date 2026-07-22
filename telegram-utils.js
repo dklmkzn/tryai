@@ -6,7 +6,7 @@ const axios = require('axios');
 
 // ===== ОСНОВНАЯ ФУНКЦИЯ ЛОГИРОВАНИЯ =====
 function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = false) {
-     bot.sendMessage(adminChatId, `📝📝 ${message} ${diagnosticMode}`).catch(() => {});
+     //bot.sendMessage(adminChatId, `📝📝 ${message} ${diagnosticMode}`).catch(() => {});
     const isCritical = level === 'error' && (
         message.includes('Self-ping failed') ||
         message.includes('Недостаточно параметров') ||
