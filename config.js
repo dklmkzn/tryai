@@ -126,6 +126,7 @@ async function loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMo
         bot.sendMessage(adminChatId, pinned.text).catch(() => {});
         bot.sendMessage(adminChatId, `конфиг: ${pinned.text}`).catch(() => {});
         safeLog(adminChatId, bot, `loadConfigFromPinned: текст закреплённого сообщения получен, длина = ${pinned.text.length}`, 'info', diagnosticMode, logFn);
+      bot.sendMessage(adminChatId, `loadConfigFromPinned: текст закреплённого сообщения получен, длина = ${pinned.text.length}`).catch(() => {});
         const arr = extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
         if (arr) {
             applyConfig(arr);
