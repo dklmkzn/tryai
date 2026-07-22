@@ -1,6 +1,7 @@
-// config.js — конфигурационные переменные и функции для работы с конфигом
+// config.js — версия 1.1.1
+// Настройки бота: переменные конфигурации, функции applyConfig, extractConfig, loadConfigFromPinned.
 
-// ===== ИНДИВИДУАЛЬНЫЕ НАСТРОЙКИ (переменные по умолчанию) =====
+// ===== ПЕРЕМЕННЫЕ (по умолчанию, перезаписываются через applyConfig) =====
 let allowedDomains = ['nplus1.ru', 'naked-science.ru', '300.ya.ru'];
 let allowedUsernames = [];
 let allowedChannels = [];
@@ -16,42 +17,25 @@ let MAX_LONG_ATTEMPTS = 20;
 let PING_MIN_INTERVAL = 10 * 60 * 1000;
 let PING_MAX_INTERVAL = 13 * 60 * 1000;
 
-// ===== ЭКСПОРТ ПЕРЕМЕННЫХ (для использования в других файлах) =====
-module.exports = {
-    allowedDomains,
-    allowedUsernames,
-    allowedChannels,
-    allowedGroups,
-    allowedChannelsNoDomainCheck,
-    allowedGroupsNoDomainCheck,
-    YANDEX_TOKEN,
-    DIAGNOSTIC_MODE,
-    ACTIVE_INTERVAL,
-    MAX_ACTIVE_ATTEMPTS,
-    LONG_INTERVAL,
-    MAX_LONG_ATTEMPTS,
-    PING_MIN_INTERVAL,
-    PING_MAX_INTERVAL,
-    // Функции для работы с конфигом
-    applyConfig,
-    extractConfig,
-    loadConfigFromPinned
-};
+// ===== ФУНКЦИИ =====
 
-// ===== ФУНКЦИЯ ИЗВЛЕЧЕНИЯ КОНФИГА ИЗ ТЕКСТА =====
+function normalizeId(id) {
+    const str = id.toString();
+    if (str.startsWith('-100')) return str.substring(4);
+    return str;
+}
+
 function extractConfig(text) {
     if (!text) {
         console.log('extractConfig: текст пуст');
         return null;
     }
-    // Попытка найти маркер [[[ ... ]]]
     let match = text.match(/\[\[\[\s*([\s\S]*?)\s*\]\]\]/);
     let inner = null;
     if (match) {
         inner = match[1].trim();
         console.log('extractConfig: найден маркер [[[ ... ]]]');
     } else {
-        // Если маркер не найден, пытаемся найти просто массив JSON
         console.log('extractConfig: маркер не найден, ищем JSON-массив');
         const arrayMatch = text.match(/(\[\s*\[[\s\S]*?\]\s*\])/);
         if (arrayMatch) {
@@ -62,7 +46,6 @@ function extractConfig(text) {
             return null;
         }
     }
-    // Очистка от BOM и лишних пробелов
     inner = inner.replace(/^\uFEFF/, '').trim();
     if (inner.startsWith('"') && inner.endsWith('"')) {
         inner = inner.substring(1, inner.length - 1);
@@ -84,7 +67,6 @@ function extractConfig(text) {
     }
 }
 
-// ===== ПРИМЕНЕНИЕ КОНФИГА =====
 function applyConfig(arr) {
     if (!Array.isArray(arr) || arr.length !== 14) {
         throw new Error('Массив должен содержать ровно 14 элементов');
@@ -106,10 +88,7 @@ function applyConfig(arr) {
     console.log('✅ Конфиг применён');
 }
 
-// ===== ЗАГРУЗКА КОНФИГА ИЗ ЗАКРЕПЛЁННОГО СООБЩЕНИЯ =====
-// Для работы этой функции необходимо передать bot и adminChatId
-// Так как они не экспортируются из этого файла, мы принимаем их как параметры.
-async function loadConfigFromPinned(bot, adminChatId) {
+async function loadConfigFromPinned(adminChatId, bot) {
     if (!adminChatId) {
         console.warn('loadConfigFromPinned: adminChatId не задан');
         return false;
@@ -119,10 +98,16 @@ async function loadConfigFromPinned(bot, adminChatId) {
         const pinned = chat.pinned_message;
         if (!pinned) {
             console.log('loadConfigFromPinned: закреплённое сообщение отсутствует');
+            if (adminChatId) {
+                bot.sendMessage(adminChatId, 'ℹ️ Закреплённое сообщение не найдено.').catch(() => {});
+            }
             return false;
         }
         if (!pinned.text) {
             console.log('loadConfigFromPinned: закреплённое сообщение не содержит текст');
+            if (adminChatId) {
+                bot.sendMessage(adminChatId, 'ℹ️ Закреплённое сообщение не содержит текст.').catch(() => {});
+            }
             return false;
         }
         console.log('loadConfigFromPinned: текст закреплённого сообщения получен, длина =', pinned.text.length);
@@ -130,13 +115,44 @@ async function loadConfigFromPinned(bot, adminChatId) {
         if (arr) {
             applyConfig(arr);
             console.log('loadConfigFromPinned: конфиг успешно применён');
+            if (adminChatId) {
+                bot.sendMessage(adminChatId, '✅ Конфиг загружен из закреплённого сообщения.').catch(() => {});
+            }
             return true;
         } else {
             console.log('loadConfigFromPinned: не удалось извлечь массив из закреплённого сообщения');
+            if (adminChatId) {
+                bot.sendMessage(adminChatId, '❌ Не удалось извлечь массив из закреплённого сообщения. Проверьте, что он содержит маркер [[[ ... ]]] или валидный JSON-массив.').catch(() => {});
+            }
             return false;
         }
     } catch (e) {
         console.error('loadConfigFromPinned: ошибка:', e);
+        if (adminChatId) {
+            bot.sendMessage(adminChatId, `❌ Ошибка загрузки конфига: ${e.message}`).catch(() => {});
+        }
         return false;
     }
 }
+
+// ===== ЭКСПОРТ =====
+module.exports = {
+    allowedDomains,
+    allowedUsernames,
+    allowedChannels,
+    allowedGroups,
+    allowedChannelsNoDomainCheck,
+    allowedGroupsNoDomainCheck,
+    YANDEX_TOKEN,
+    DIAGNOSTIC_MODE,
+    ACTIVE_INTERVAL,
+    MAX_ACTIVE_ATTEMPTS,
+    LONG_INTERVAL,
+    MAX_LONG_ATTEMPTS,
+    PING_MIN_INTERVAL,
+    PING_MAX_INTERVAL,
+    normalizeId,
+    extractConfig,
+    applyConfig,
+    loadConfigFromPinned
+};
