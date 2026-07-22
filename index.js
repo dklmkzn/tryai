@@ -74,6 +74,24 @@ app.post('/webhook', async (req, res) => {
                 return;
             }
 
+            // Команда удаления закреплённого сообщения (если оно от бота)
+if (text.startsWith('/unpin')) {
+    try {
+        const chat = await bot.getChat(adminChatId);
+        const pinned = chat.pinned_message;
+        if (!pinned) {
+            await bot.sendMessage(adminChatId, 'ℹ️ Закреплённое сообщение не найдено.');
+            return;
+        }
+        // Удаляем сообщение (бот должен быть его автором)
+        await bot.deleteMessage(adminChatId, pinned.message_id);
+        await bot.sendMessage(adminChatId, '✅ Закреплённое сообщение удалено.');
+    } catch (e) {
+        await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}`);
+    }
+    return;
+}
+            
             // Команда перезагрузки конфига из закреплённого сообщения
             if (text.startsWith('/reload')) {
                 const loaded = await config.loadConfigFromPinned(adminChatId, bot, log, config.DIAGNOSTIC_MODE);
