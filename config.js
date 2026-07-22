@@ -185,7 +185,7 @@ async function loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMo
             safeLog(adminChatId, bot, 'Закреплённое сообщение не содержит текст', 'warn', diagnosticMode, logFn);
             return false;
         }
-        safeLog(adminChatId, bot, `Текст закреплённого сообщения: ${pinned.text.substring(0, 100)}...`, 'info', diagnosticMode, logFn);
+        safeLog(adminChatId, bot, `Текст закреплённого сообщения: ${pinned.text}...`, 'info', diagnosticMode, logFn);
 
 
         
