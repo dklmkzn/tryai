@@ -25,8 +25,8 @@ const greetedUsers = new Map();
 yandex.setYandexToken(config.YANDEX_TOKEN);
 
 // ===== ФУНКЦИЯ ЛОГИРОВАНИЯ =====
-function log(message, level = 'info') {
-    tgUtils.logMessage(adminChatId, bot, message, level, config.DIAGNOSTIC_MODE);
+function log(message, level = 'info', diagnosticMode = false) {
+    tgUtils.logMessage(adminChatId, bot, message, level, diagnosticMode || config.DIAGNOSTIC_MODE);
 }
 
 // ===== ВЕБХУК =====
