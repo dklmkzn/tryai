@@ -130,6 +130,7 @@ app.post('/webhook', async (req, res) => {
                     let greeting = '✅ Вы назначились администратором бота.';
                     const configLoaded = await config.loadConfigFromPinned(adminChatId, bot, log, config.DIAGNOSTIC_MODE);
                     if (configLoaded) {
+                        log(`ya`, config.YANDEX_TOKEN);
                         yandex.setYandexToken(config.YANDEX_TOKEN);
                         greeting += '\nКонфиг загружен из закреплённого сообщения.';
                     } else {
