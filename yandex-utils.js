@@ -12,8 +12,6 @@ function setYandexToken(token) {
     configYandexToken = token;
     // Диагностический вывод (будет виден в консоли до назначения админа или через logFn)
     console.log(`[setYandexToken] токен ${token ? 'установлен (первые 10 символов: ' + token.substring(0,10) + '...)' : 'пустой'}`);
-    bot.sendMessage(chatId, `[setYandexToken] токен ${token ? 'установлен (первые 10 символов: ' + token : 'пустой'}`);
-
 }
 
 // ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ЛОГИРОВАНИЯ =====
