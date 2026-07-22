@@ -1,4 +1,4 @@
-// index.js — версия 1.0.10
+// index.js — версия 1.0.11
 
 // ===== ИНДИВИДУАЛЬНЫЕ НАСТРОЙКИ (переменные по умолчанию) =====
 let allowedDomains = ['nplus1.ru', 'naked-science.ru', '300.ya.ru'];
@@ -299,8 +299,8 @@ async function processUrl(chatId, text, originalMessageId = null) {
     const originalUrl = urlMatch[0];
     logToAdmin(`🔗 Обработка ссылки: ${originalUrl}`);
 
-    // Проверка домена (если chatId не админ, то проверяем по списку)
-    let isAdmin = (adminChatId && chatId === adminChatId);
+    // Проверка домена (если это не админ в личке)
+    const isAdmin = (adminChatId && chatId === adminChatId);
     if (!isAdmin) {
         try {
             const hostname = new URL(originalUrl).hostname;
@@ -325,7 +325,6 @@ async function processUrl(chatId, text, originalMessageId = null) {
 
         let sentMsg;
         if (originalMessageId) {
-            // Если мы редактируем уже существующее сообщение (например, в канале)
             await bot.editMessageText(`✅ Ссылка на пересказ: ${shortUrl}\nТекст готовится, ожидайте...`, {
                 chat_id: chatId,
                 message_id: originalMessageId
@@ -477,8 +476,6 @@ app.post('/webhook', async (req, res) => {
                                  (isGroup && allowedGroupsNoDomainCheck.includes(chatIdStr));
 
     if (!isDomainCheckSkipped) {
-        // Домен будет проверен внутри processUrl, поэтому передаём флаг, что это не админ
-        // Но мы уже проверили админа выше, поэтому processUrl сама проверит домен
         await processUrl(chatId, text, message.message_id);
     } else {
         logToAdmin(`⏩ Проверка домена пропущена (чат в списке исключений)`);
@@ -486,19 +483,117 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// ===== ОСТАЛЬНЫЕ ЭНДПОИНТЫ (без изменений) =====
+// ===== ЭНДПОИНТ /process (обработка self-ping) =====
 app.get('/process', async (req, res) => {
     res.sendStatus(200);
-    // ... (код без изменений, он использует глобальные переменные)
+
+    const { shortUrl, chatId, messageId, attempt, phase } = req.query;
+    if (!shortUrl || !chatId || !messageId) {
+        console.warn('Недостаточно параметров в /process');
+        if (adminChatId) {
+            bot.sendMessage(adminChatId, '⚠️ Недостаточно параметров в /process').catch(() => {});
+        }
+        return;
+    }
+
+    const attemptNum = parseInt(attempt) || 0;
+    const currentPhase = phase || 'active';
+
+    try {
+        const content = await extractTextFromYaRu(shortUrl);
+        if (content.status === 200 && content.content && content.content.length > 100) {
+            const parts = formatNews(content.title, content.content);
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: 'Открыть пересказ на 300.ya.ru', url: shortUrl }]
+                ]
+            };
+            await bot.editMessageText(parts[0], {
+                chat_id: chatId,
+                message_id: parseInt(messageId),
+                parse_mode: 'HTML',
+                reply_markup: keyboard
+            });
+            if (parts.length > 1) {
+                for (let i = 1; i < parts.length; i++) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    await bot.sendMessage(chatId, parts[i], {
+                        parse_mode: 'HTML',
+                        reply_markup: keyboard
+                    });
+                }
+            }
+            if (content.origin) {
+                logToAdmin(`🔗 Оригинал (не отправлен пользователю): ${content.origin}`);
+            }
+            for (const [key, val] of tasks.entries()) {
+                if (val.shortUrl === shortUrl && val.chatId === chatId) {
+                    tasks.delete(key);
+                    break;
+                }
+            }
+            return;
+        }
+    } catch (e) {
+        console.error('Ошибка при проверке контента:', e);
+    }
+
+    let nextAttempt = attemptNum + 1;
+    let nextPhase = currentPhase;
+
+    if (currentPhase === 'active') {
+        if (nextAttempt > MAX_ACTIVE_ATTEMPTS) {
+            nextPhase = 'long';
+            nextAttempt = 1;
+        }
+    }
+
+    if (currentPhase === 'long') {
+        if (nextAttempt > MAX_LONG_ATTEMPTS) {
+            await bot.editMessageText('❌ Не удалось получить текст. Попробуйте позже.', {
+                chat_id: chatId,
+                message_id: parseInt(messageId)
+            });
+            await notifyAdmin(`Задача для ${shortUrl} не завершена после всех попыток`);
+            for (const [key, val] of tasks.entries()) {
+                if (val.shortUrl === shortUrl && val.chatId === chatId) {
+                    tasks.delete(key);
+                    break;
+                }
+            }
+            return;
+        }
+    }
+
+    const interval = (nextPhase === 'active') ? ACTIVE_INTERVAL : LONG_INTERVAL;
+
+    const params = {
+        shortUrl,
+        chatId,
+        messageId,
+        attempt: nextAttempt,
+        phase: nextPhase
+    };
+    for (const [key, val] of tasks.entries()) {
+        if (val.shortUrl === shortUrl && val.chatId === chatId) {
+            tasks.set(key, { ...params, updatedAt: Date.now() });
+            break;
+        }
+    }
+    setTimeout(() => {
+        scheduleSelfPing(params);
+    }, interval);
 });
 
+// ===== ЭНДПОИНТ /ping (дежурный пинг) =====
 app.get('/ping', (req, res) => {
     res.sendStatus(200);
 });
 
+// ===== ЭНДПОИНТ /status =====
 app.get('/status', (req, res) => {
     res.json({
-        version: '1.0.10',
+        version: '1.0.11',
         uptime: process.uptime(),
         tasksCount: tasks.size,
         activeTasks: Array.from(tasks.keys()),
@@ -508,4 +603,50 @@ app.get('/status', (req, res) => {
 });
 
 // ===== ЗАПУСК =====
-// ... (код запуска без изменений)
+
+function startPingScheduler() {
+    const randomInterval = () => {
+        const min = PING_MIN_INTERVAL;
+        const max = PING_MAX_INTERVAL;
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    };
+
+    function doPing() {
+        axios.get(`${RENDER_URL}/ping`)
+            .catch(err => console.error('Дежурный пинг не удался:', err.message));
+        const next = randomInterval();
+        setTimeout(doPing, next);
+    }
+
+    setTimeout(doPing, 10000);
+}
+
+async function setWebhook(url) {
+    if (!url) {
+        console.error('RENDER_URL не определён, вебхук не может быть установлен');
+        return false;
+    }
+    const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/setWebhook?url=${encodeURIComponent(url)}`;
+    try {
+        const response = await axios.get(apiUrl);
+        if (response.data && response.data.ok) {
+            console.log(`Вебхук установлен на ${url}`);
+            return true;
+        } else {
+            console.error('Ошибка установки вебхука:', response.data.description || 'неизвестная ошибка');
+            return false;
+        }
+    } catch (e) {
+        console.error('Ошибка при запросе к Telegram API:', e.message);
+        return false;
+    }
+}
+
+app.listen(PORT, async () => {
+    console.log(`Бот запущен, версия 1.0.11, порт ${PORT}`);
+    const webhookUrl = `${RENDER_URL}/webhook`;
+    await setWebhook(webhookUrl);
+    startPingScheduler();
+    console.log(`Диагностический режим: ${DIAGNOSTIC_MODE ? 'ВКЛЮЧЁН' : 'ВЫКЛЮЧЕН'}`);
+    console.log('Бот готов к работе. Напишите в личку "Здравствуйте!" для начала.');
+});
