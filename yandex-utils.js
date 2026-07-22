@@ -1,26 +1,25 @@
-// yandex-utils.js — версия 1.1.1
-// Функции для работы с 300.ya.ru: получение shortUrl, парсинг страницы, форматирование новости.
+// yandex-utils.js — версия 1.1.2
+// Функции для работы с 300.ya.ru.
 
 const axios = require('axios');
 const cheerio = require('cheerio');
 
-// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (используют глобальный YANDEX_TOKEN из config) =====
-let YANDEX_TOKEN = ''; // будет установлено через applyConfig
-
-// Мы не можем напрямую импортировать YANDEX_TOKEN из config, так как он может меняться.
-// Поэтому будем передавать его через замыкание при вызове getShortUrl и extractTextFromYaRu.
-// Вместо этого я буду использовать глобальный объект config, но для простоты сделаем так:
-// В index.js мы передадим YANDEX_TOKEN как параметр в функции.
-
-// Однако проще всего сделать так, чтобы функции принимали YANDEX_TOKEN как аргумент.
-// Но я перепишу их с использованием глобальной переменной из config, если она экспортируется.
-
-// В этом файле мы будем использовать переменную configYandexToken, которую установим из вне.
+// ===== ПЕРЕМЕННЫЕ =====
 let configYandexToken = '';
+let logFn = console.log; // по умолчанию
+
+// ===== УСТАНОВКА ФУНКЦИИ ЛОГИРОВАНИЯ =====
+function setLogFunction(fn) {
+    if (typeof fn === 'function') {
+        logFn = fn;
+    }
+}
 
 function setYandexToken(token) {
     configYandexToken = token;
 }
+
+// ===== ОСНОВНЫЕ ФУНКЦИИ =====
 
 async function getShortUrl(articleUrl, yandexToken) {
     if (articleUrl.includes('300.ya.ru')) {
@@ -40,15 +39,15 @@ async function getShortUrl(articleUrl, yandexToken) {
         );
         return { status: 'success', sharing_url: response.data.sharing_url };
     } catch (e) {
-        console.error('❌ Ошибка получения shortUrl:', e.message);
+        logFn(`❌ Ошибка получения shortUrl: ${e.message}`, 'error');
         if (e.response) {
-            console.error('Статус:', e.response.status, 'Данные:', JSON.stringify(e.response.data));
+            logFn(`Статус: ${e.response.status}, Данные: ${JSON.stringify(e.response.data)}`, 'error');
         }
         return { status: 'error', message: e.message };
     }
 }
 
-async function extractTextFromYaRu(url, yandexToken, logToAdmin = null, adminChatId = null, bot = null) {
+async function extractTextFromYaRu(url, yandexToken, logMessage, adminChatId, bot, diagnosticMode) {
     try {
         const response = await axios.get(url, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -60,19 +59,30 @@ async function extractTextFromYaRu(url, yandexToken, logToAdmin = null, adminCha
         const fullText = $('body').text();
 
         // Диагностика
-        const msg = `📄 Получена страница ${url}, первые 500 символов:\n${fullText.substring(0, 500)}\n🔍 Фраза "Данный формат временно недоступен для этого видео" ${fullText.includes('Данный формат временно недоступен для этого видео') ? 'ПРИСУТСТВУЕТ' : 'ОТСУТСТВУЕТ'}`;
-        if (logToAdmin && adminChatId && bot) {
-            logToAdmin(adminChatId, bot, msg);
+        const hasForbidden = fullText.includes('Данный формат временно недоступен для этого видео');
+        const msg = `📄 Получена страница ${url}, первые 500 символов:\n${fullText.substring(0, 500)}\n🔍 Фраза "Данный формат временно недоступен для этого видео" ${hasForbidden ? 'ПРИСУТСТВУЕТ' : 'ОТСУТСТВУЕТ'}`;
+        if (logMessage) {
+            logMessage(adminChatId, bot, msg, 'info', diagnosticMode);
         } else {
-            console.log(msg);
+            logFn(msg, 'info');
         }
 
         const { title, content } = parseContent(fullText);
         return { status: 200, title, content, origin: originLink };
     } catch (e) {
-        console.error('❌ Ошибка получения контента с', url, e.message);
+        const errMsg = `❌ Ошибка получения контента с ${url}: ${e.message}`;
+        if (logMessage) {
+            logMessage(adminChatId, bot, errMsg, 'error', diagnosticMode);
+        } else {
+            logFn(errMsg, 'error');
+        }
         if (e.response) {
-            console.error('Статус:', e.response.status);
+            const statusMsg = `Статус: ${e.response.status}`;
+            if (logMessage) {
+                logMessage(adminChatId, bot, statusMsg, 'error', diagnosticMode);
+            } else {
+                logFn(statusMsg, 'error');
+            }
         }
         return { status: 500, title: 'Error', content: e.message, origin: '' };
     }
@@ -161,11 +171,11 @@ function formatNews(title, content) {
     return messageParts;
 }
 
-// ===== ЭКСПОРТ =====
 module.exports = {
     getShortUrl,
     extractTextFromYaRu,
     parseContent,
     formatNews,
-    setYandexToken
+    setYandexToken,
+    setLogFunction
 };
