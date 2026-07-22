@@ -1,7 +1,7 @@
-// config.js — версия 1.1.1
-// Настройки бота: переменные конфигурации, функции applyConfig, extractConfig, loadConfigFromPinned.
+// config.js — версия 1.1.2
+// Настройки бота: переменные, applyConfig, extractConfig, loadConfigFromPinned.
 
-// ===== ПЕРЕМЕННЫЕ (по умолчанию, перезаписываются через applyConfig) =====
+// ===== ПЕРЕМЕННЫЕ (по умолчанию) =====
 let allowedDomains = ['nplus1.ru', 'naked-science.ru', '300.ya.ru'];
 let allowedUsernames = [];
 let allowedChannels = [];
@@ -17,6 +17,15 @@ let MAX_LONG_ATTEMPTS = 20;
 let PING_MIN_INTERVAL = 10 * 60 * 1000;
 let PING_MAX_INTERVAL = 13 * 60 * 1000;
 
+// ===== ФУНКЦИЯ ЛОГИРОВАНИЯ (устанавливается извне) =====
+let logFn = console.log; // по умолчанию — консоль
+
+function setLogFunction(fn) {
+    if (typeof fn === 'function') {
+        logFn = fn;
+    }
+}
+
 // ===== ФУНКЦИИ =====
 
 function normalizeId(id) {
@@ -27,22 +36,22 @@ function normalizeId(id) {
 
 function extractConfig(text) {
     if (!text) {
-        console.log('extractConfig: текст пуст');
+        logFn('extractConfig: текст пуст', 'info');
         return null;
     }
     let match = text.match(/\[\[\[\s*([\s\S]*?)\s*\]\]\]/);
     let inner = null;
     if (match) {
         inner = match[1].trim();
-        console.log('extractConfig: найден маркер [[[ ... ]]]');
+        logFn('extractConfig: найден маркер [[[ ... ]]]', 'info');
     } else {
-        console.log('extractConfig: маркер не найден, ищем JSON-массив');
+        logFn('extractConfig: маркер не найден, ищем JSON-массив', 'info');
         const arrayMatch = text.match(/(\[\s*\[[\s\S]*?\]\s*\])/);
         if (arrayMatch) {
             inner = arrayMatch[1].trim();
-            console.log('extractConfig: найден JSON-массив');
+            logFn('extractConfig: найден JSON-массив', 'info');
         } else {
-            console.log('extractConfig: JSON-массив не найден');
+            logFn('extractConfig: JSON-массив не найден', 'info');
             return null;
         }
     }
@@ -54,15 +63,15 @@ function extractConfig(text) {
     try {
         const arr = JSON.parse(inner);
         if (Array.isArray(arr) && arr.length === 14) {
-            console.log(`extractConfig: успешно извлечён массив из ${arr.length} элементов`);
+            logFn(`extractConfig: успешно извлечён массив из ${arr.length} элементов`, 'info');
             return arr;
         } else {
-            console.log(`extractConfig: массив имеет длину ${arr.length}, ожидается 14`);
+            logFn(`extractConfig: массив имеет длину ${arr.length}, ожидается 14`, 'info');
             return null;
         }
     } catch (e) {
-        console.error('extractConfig: ошибка парсинга JSON:', e.message);
-        console.error('Текст, который парсили:', inner);
+        logFn(`extractConfig: ошибка парсинга JSON: ${e.message}`, 'error');
+        logFn(`Текст, который парсили: ${inner}`, 'error');
         return null;
     }
 }
@@ -85,49 +94,49 @@ function applyConfig(arr) {
     MAX_LONG_ATTEMPTS = typeof arr[11] === 'number' ? arr[11] : 20;
     PING_MIN_INTERVAL = typeof arr[12] === 'number' ? arr[12] : 10 * 60 * 1000;
     PING_MAX_INTERVAL = typeof arr[13] === 'number' ? arr[13] : 13 * 60 * 1000;
-    console.log('✅ Конфиг применён');
+    logFn('✅ Конфиг применён', 'info');
 }
 
 async function loadConfigFromPinned(adminChatId, bot) {
     if (!adminChatId) {
-        console.warn('loadConfigFromPinned: adminChatId не задан');
+        logFn('loadConfigFromPinned: adminChatId не задан', 'warn');
         return false;
     }
     try {
         const chat = await bot.getChat(adminChatId);
         const pinned = chat.pinned_message;
         if (!pinned) {
-            console.log('loadConfigFromPinned: закреплённое сообщение отсутствует');
+            logFn('loadConfigFromPinned: закреплённое сообщение отсутствует', 'info');
             if (adminChatId) {
                 bot.sendMessage(adminChatId, 'ℹ️ Закреплённое сообщение не найдено.').catch(() => {});
             }
             return false;
         }
         if (!pinned.text) {
-            console.log('loadConfigFromPinned: закреплённое сообщение не содержит текст');
+            logFn('loadConfigFromPinned: закреплённое сообщение не содержит текст', 'info');
             if (adminChatId) {
                 bot.sendMessage(adminChatId, 'ℹ️ Закреплённое сообщение не содержит текст.').catch(() => {});
             }
             return false;
         }
-        console.log('loadConfigFromPinned: текст закреплённого сообщения получен, длина =', pinned.text.length);
+        logFn(`loadConfigFromPinned: текст закреплённого сообщения получен, длина = ${pinned.text.length}`, 'info');
         const arr = extractConfig(pinned.text);
         if (arr) {
             applyConfig(arr);
-            console.log('loadConfigFromPinned: конфиг успешно применён');
+            logFn('loadConfigFromPinned: конфиг успешно применён', 'info');
             if (adminChatId) {
                 bot.sendMessage(adminChatId, '✅ Конфиг загружен из закреплённого сообщения.').catch(() => {});
             }
             return true;
         } else {
-            console.log('loadConfigFromPinned: не удалось извлечь массив из закреплённого сообщения');
+            logFn('loadConfigFromPinned: не удалось извлечь массив из закреплённого сообщения', 'info');
             if (adminChatId) {
-                bot.sendMessage(adminChatId, '❌ Не удалось извлечь массив из закреплённого сообщения. Проверьте, что он содержит маркер [[[ ... ]]] или валидный JSON-массив.').catch(() => {});
+                bot.sendMessage(adminChatId, '❌ Не удалось извлечь массив из закреплённого сообщения.').catch(() => {});
             }
             return false;
         }
     } catch (e) {
-        console.error('loadConfigFromPinned: ошибка:', e);
+        logFn(`loadConfigFromPinned: ошибка: ${e.message}`, 'error');
         if (adminChatId) {
             bot.sendMessage(adminChatId, `❌ Ошибка загрузки конфига: ${e.message}`).catch(() => {});
         }
@@ -135,7 +144,6 @@ async function loadConfigFromPinned(adminChatId, bot) {
     }
 }
 
-// ===== ЭКСПОРТ =====
 module.exports = {
     allowedDomains,
     allowedUsernames,
@@ -154,5 +162,6 @@ module.exports = {
     normalizeId,
     extractConfig,
     applyConfig,
-    loadConfigFromPinned
+    loadConfigFromPinned,
+    setLogFunction
 };
