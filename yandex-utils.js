@@ -55,7 +55,7 @@ async function getShortUrl(articleUrl, yandexToken, logFn = null, adminChatId = 
                 timeout: 10000
             }
                 ]
-        safeLog(adminChatId, bot, `Запрос к 300.ya.ru: ${JSON.stringify(requestData)}`, 'info', diagnosticMode, logFn);
+        safeLog(adminChatId, bot, `${diagnosticMode} Запрос к 300.ya.ru: ${JSON.stringify(requestData)}`, 'info', true, logFn);
         return { status: 'error', message: e.message };
     }
 }
