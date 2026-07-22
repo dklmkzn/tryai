@@ -17,7 +17,7 @@ function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = 
     );
 
             if (adminChatId && bot) {
-            bot.sendMessage(adminChatId, `⚠️⚠️ ${message}`).catch(e => {
+            bot.sendMessage(adminChatId, `⚠️${diagnosticMode}⚠️ ${message}`).catch(e => {
                 
             });
 
