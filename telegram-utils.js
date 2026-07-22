@@ -1,12 +1,11 @@
-// telegram-utils.js — версия 1.1.2
+// telegram-utils.js — версия 1.1.6
 // Утилиты для работы с Telegram: логирование, уведомления, обработка ссылок, self-ping.
-// Логирование через logMessage (единая точка).
 
 const axios = require('axios');
 
 // ===== ОСНОВНАЯ ФУНКЦИЯ ЛОГИРОВАНИЯ =====
 function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = false) {
-     //bot.sendMessage(adminChatId, `📝📝 ${message} ${diagnosticMode}`).catch(() => {});
+    // Критические ошибки — всегда в консоль и админу
     const isCritical = level === 'error' && (
         message.includes('Self-ping failed') ||
         message.includes('Недостаточно параметров') ||
@@ -27,11 +26,13 @@ function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = 
         return;
     }
 
+    // Если админ не назначен — выводим в консоль
     if (!adminChatId) {
         console.log(`[${level}] ${message}`);
         return;
     }
 
+    // Если админ назначен и включена диагностика — в приват, консоль молчит
     if (diagnosticMode) {
         if (bot) {
             bot.sendMessage(adminChatId, `📝 ${message}`).catch(e => {
@@ -42,10 +43,10 @@ function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = 
         return;
     }
 
-    // Если диагностика выключена и не критично — ничего не делаем
+    // Если диагностика выключена — ничего не делаем
 }
 
-// ===== ОБЁРТКА ДЛЯ СОВМЕСТИМОСТИ =====
+// ===== ОБЁРТКА ДЛЯ СОВМЕСТИМОСТИ (используется редко) =====
 function logToAdmin(adminChatId, bot, message) {
     logMessage(adminChatId, bot, message, 'info', false);
 }
@@ -74,9 +75,6 @@ function scheduleSelfPing(params, renderUrl) {
     const url = `${renderUrl}/process?` + new URLSearchParams(params).toString();
     setTimeout(() => {
         axios.get(url).catch(err => {
-            // Критическая ошибка — она будет обработана через logMessage, но здесь мы не можем вызвать logMessage без параметров
-            // Поэтому оставляем console.error, но это критическая ошибка, она попадёт в isCritical выше, если будет вызвана через logMessage
-            // Но мы не можем вызвать logMessage без adminChatId, поэтому оставляем console.error
             console.error('Self-ping failed:', err.message);
         });
     }, 1000);
