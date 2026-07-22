@@ -126,30 +126,6 @@ async function loadConfigFromPinned() {
     return false;
 }
 
-// ===== ОБНОВЛЕНИЕ ЗАКРЕПЛЁННОГО =====
-async function updatePinnedConfig(arr) {
-    if (!adminChatId) return false;
-    try {
-        const text = `Конфиг бота (закреплено):\n\`\`\`json\n${JSON.stringify(arr)}\n\`\`\``;
-        const chat = await bot.getChat(adminChatId);
-        if (chat.pinned_message) {
-            await bot.editMessageText(text, {
-                chat_id: adminChatId,
-                message_id: chat.pinned_message.message_id,
-                parse_mode: 'Markdown'
-            });
-        } else {
-            const sent = await bot.sendMessage(adminChatId, text, { parse_mode: 'Markdown' });
-            await bot.pinChatMessage(adminChatId, sent.message_id);
-        }
-        logToAdmin('✅ Закреплённое сообщение обновлено');
-        return true;
-    } catch (e) {
-        console.error('Ошибка обновления закреплённого:', e);
-        return false;
-    }
-}
-
 // ===== ФУНКЦИИ ДЛЯ РАБОТЫ С 300.YA.RU =====
 async function getShortUrl(articleUrl) {
     if (articleUrl.includes('300.ya.ru')) {
@@ -308,7 +284,6 @@ app.post('/webhook', async (req, res) => {
                         throw new Error('Массив должен содержать ровно 14 элементов');
                     }
                     applyConfig(arr);
-                    await updatePinnedConfig(arr);
                     await bot.sendMessage(adminChatId, '✅ Конфиг обновлён и закреплён.');
                 } catch (e) {
                     await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}`);
@@ -341,12 +316,12 @@ app.post('/webhook', async (req, res) => {
                     await bot.sendMessage(adminChatId, greeting);
                     return;
                 } else {
-                    await bot.sendMessage(chatId, '❌ Маска не подходит для вашего username. Попробуйте ещё раз.');
+                    await bot.sendMessage(chatId, 'Здравствуйте!');
                     return;
                 }
             } else {
                 greetedUsers.set(chatId, true);
-                await bot.sendMessage(chatId, 'Здравствуйте! Отправьте маску вида `б*б` (например, d*n) для проверки.', { parse_mode: 'Markdown' });
+                await bot.sendMessage(chatId, 'Здравствуйте!', { parse_mode: 'Markdown' });
                 return;
             }
         }
