@@ -9,7 +9,7 @@ let allowedGroups = [];
 let allowedChannelsNoDomainCheck = [];
 let allowedGroupsNoDomainCheck = [];
 let YANDEX_TOKEN = process.env.YANDEX_TOKEN || '';
-let DIAGNOSTIC_MODE = process.env.DIAGNOSTIC_ENABLED === 'true' || false;
+let DIAGNOSTIC_MODE = process.env.DIAGNOSTIC_ENABLED === 'true' || true;
 let ACTIVE_INTERVAL = 3000;
 let MAX_ACTIVE_ATTEMPTS = 100;
 let LONG_INTERVAL = 60000;
