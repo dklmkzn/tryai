@@ -1,51 +1,43 @@
-// yandex-utils.js — версия 1.1.5
-// Функции для работы с 300.ya.ru: получение shortUrl, парсинг страницы, форматирование новости.
-// Логирование через safeLog (если передана logFn) или в консоль.
+// yandex-utils.js — версия 1.1.6
+// Функции для работы с 300.ya.ru.
 
 const axios = require('axios');
 const cheerio = require('cheerio');
 
-// ===== ВНУТРЕННИЙ ТОКЕН (устанавливается через setYandexToken) =====
 let configYandexToken = '';
 
 function setYandexToken(token) {
     configYandexToken = token;
-    // Диагностический вывод (будет виден в консоли до назначения админа или через logFn)
+    // Диагностика выводится в консоль всегда (при старте до назначения админа)
     console.log(`[setYandexToken] токен ${token ? 'установлен (первые 10 символов: ' + token.substring(0,10) + '...)' : 'пустой'}`);
+    // Если админ уже есть, можно отправить в приват через logFn, но здесь этого нет.
+    // Лучше оставить только консоль.
 }
 
-// ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ЛОГИРОВАНИЯ =====
 function safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
     if (logFn) {
-        // Передаём только message, level и diagnosticMode, остальное берётся из замыкания в index.js
         logFn(message, level, diagnosticMode);
     } else {
         console.log(`[${level}] ${message}`);
     }
 }
 
-// ===== ОСНОВНЫЕ ФУНКЦИИ =====
-
-/**
- * Получение короткой ссылки через API 300.ya.ru
- */
 async function getShortUrl(articleUrl, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
-    // Если уже ссылка на 300.ya.ru — возвращаем как есть
+    // Определяем, какой токен используется
+    const usedToken = yandexToken || configYandexToken;
+    const tokenPreview = usedToken ? usedToken.substring(0,10) + '...' : 'НЕ ЗАДАН';
+    safeLog(adminChatId, bot, `[getShortUrl] используемый токен: ${tokenPreview} (передан yandexToken=${!!yandexToken}, configYandexToken=${!!configYandexToken})`, 'info', diagnosticMode, logFn);
+
     if (articleUrl.includes('300.ya.ru')) {
         safeLog(adminChatId, bot, 'getShortUrl: уже ссылка на 300.ya.ru', 'info', diagnosticMode, logFn);
         return { status: 'success', sharing_url: articleUrl };
     }
 
-    // Определяем, какой токен использовать
-    const token = yandexToken || configYandexToken;
-    const tokenPreview = token ? token.substring(0, 10) + '...' : 'не задан';
-
-    // Логируем параметры запроса (в одну строку, JSON)
     const requestData = [
         { article_url: articleUrl },
         {
             headers: {
-                'Authorization': `OAuth ${tokenPreview}`,
+                'Authorization': usedToken ? `OAuth ${usedToken}` : '',
                 'Content-Type': 'application/json'
             },
             timeout: 10000
@@ -59,7 +51,7 @@ async function getShortUrl(articleUrl, yandexToken, logFn = null, adminChatId = 
             { article_url: articleUrl },
             {
                 headers: {
-                    'Authorization': token ? `OAuth ${token}` : '',
+                    'Authorization': usedToken ? `OAuth ${usedToken}` : '',
                     'Content-Type': 'application/json'
                 },
                 timeout: 10000
@@ -77,9 +69,6 @@ async function getShortUrl(articleUrl, yandexToken, logFn = null, adminChatId = 
     }
 }
 
-/**
- * Извлечение текста со страницы 300.ya.ru
- */
 async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
     try {
         const response = await axios.get(url, {
@@ -91,7 +80,7 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
         const originLink = $('a').filter((i, el) => $(el).text().includes('Перейти на оригинал')).attr('href') || '';
         const fullText = $('body').text();
 
-        // Диагностика: первые 500 символов и наличие запрещённой фразы
+        // Диагностика
         const diagMsg = `📄 Получена страница ${url}, первые 500 символов:\n${fullText.substring(0, 500)}\n🔍 Фраза "Данный формат временно недоступен для этого видео" ${fullText.includes('Данный формат временно недоступен для этого видео') ? 'ПРИСУТСТВУЕТ' : 'ОТСУТСТВУЕТ'}`;
         safeLog(adminChatId, bot, diagMsg, 'info', diagnosticMode, logFn);
 
@@ -107,9 +96,6 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
     }
 }
 
-/**
- * Парсинг содержимого страницы (извлечение заголовка и текста)
- */
 function parseContent(fullText) {
     const isYandexGptSummary = /YandexGPT\s+краткий пересказ статьи от нейросети/im.test(fullText);
     const startMarker = /Пересказ сделан (.{0,50}?)Обновить/s;
@@ -148,9 +134,6 @@ function parseContent(fullText) {
     return { title: titleText, content: cleanText };
 }
 
-/**
- * Форматирование новости с разбивкой на части (если длиннее 4096 символов)
- */
 function formatNews(title, content) {
     const BUTTON_TEXT = 'Открыть пересказ на 300.ya.ru';
     const BUTTON_URL_LENGTH = 30;
@@ -196,7 +179,6 @@ function formatNews(title, content) {
     return messageParts;
 }
 
-// ===== ЭКСПОРТ =====
 module.exports = {
     getShortUrl,
     extractTextFromYaRu,
