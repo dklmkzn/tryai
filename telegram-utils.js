@@ -19,7 +19,7 @@ function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = 
             if (adminChatId && bot) {
             bot.sendMessage(adminChatId, `⚠️${diagnosticMode}⚠️ ${message}`).catch(e => {
                 
-            });
+            })};
 
     if (isCritical) {
         console.error(`[${level}] ${message}`);
