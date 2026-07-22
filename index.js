@@ -1,7 +1,8 @@
-// index.js — версия 1.1.2
+// index.js — версия 1.1.3
 // Точка входа: инициализация Express, вебхук, эндпоинты /process, /ping, /status, запуск.
 // Логирование: до назначения админа — консоль, после — только в личку (если DIAGNOSTIC_MODE=true),
 // критические ошибки — всегда.
+// Передаём log как logFn во все вызовы loadConfigFromPinned.
 
 const express = require('express');
 const axios = require('axios');
@@ -57,7 +58,7 @@ app.post('/webhook', async (req, res) => {
         if (chatId === adminChatId) {
             // Проверяем наличие маркера [[[ (команда конфига)
             if (text.includes('[[')) {
-                const arr = config.extractConfig(text);
+                const arr = config.extractConfig(text, log, adminChatId, bot, config.DIAGNOSTIC_MODE);
                 if (arr) {
                     try {
                         config.applyConfig(arr);
@@ -75,7 +76,7 @@ app.post('/webhook', async (req, res) => {
 
             // Команда перезагрузки конфига из закреплённого сообщения
             if (text.startsWith('/reload')) {
-                const loaded = await config.loadConfigFromPinned(adminChatId, bot);
+                const loaded = await config.loadConfigFromPinned(adminChatId, bot, log, config.DIAGNOSTIC_MODE);
                 if (loaded) {
                     yandex.setYandexToken(config.YANDEX_TOKEN);
                     await bot.sendMessage(adminChatId, '✅ Конфиг перезагружен из закреплённого сообщения.');
@@ -116,7 +117,7 @@ app.post('/webhook', async (req, res) => {
                     // Админ назначен — теперь логи будут управляться диагностикой
                     log(`Администратор назначен`, 'info');
                     let greeting = '✅ Вы назначились администратором бота.';
-                    const configLoaded = await config.loadConfigFromPinned(adminChatId, bot);
+                    const configLoaded = await config.loadConfigFromPinned(adminChatId, bot, log, config.DIAGNOSTIC_MODE);
                     if (configLoaded) {
                         yandex.setYandexToken(config.YANDEX_TOKEN);
                         greeting += '\nКонфиг загружен из закреплённого сообщения.';
@@ -329,7 +330,7 @@ app.get('/ping', (req, res) => {
 // ===== ЭНДПОИНТ /status =====
 app.get('/status', (req, res) => {
     res.json({
-        version: '1.1.2',
+        version: '1.1.3',
         uptime: process.uptime(),
         tasksCount: tasks.size,
         activeTasks: Array.from(tasks.keys()),
@@ -399,7 +400,7 @@ async function setWebhook(url) {
 }
 
 app.listen(PORT, async () => {
-    console.log(`Бот запущен, версия 1.1.2, порт ${PORT}`);
+    console.log(`Бот запущен, версия 1.1.3, порт ${PORT}`);
     const webhookUrl = `${RENDER_URL}/webhook`;
     await setWebhook(webhookUrl);
     startPingScheduler();
