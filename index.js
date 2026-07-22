@@ -1,24 +1,19 @@
-// index.js — версия 1.1.3
+// index.js — версия 1.1.5
 // Точка входа: инициализация Express, вебхук, эндпоинты /process, /ping, /status, запуск.
-// Логирование: до назначения админа — консоль, после — только в личку (если DIAGNOSTIC_MODE=true),
-// критические ошибки — всегда.
-// Передаём log как logFn во все вызовы loadConfigFromPinned.
+// Поддерживает полное управление закреплёнными сообщениями (открепление всех и закрепление нового).
 
 const express = require('express');
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
 
-// Подключаем модули
 const config = require('./config');
 const yandex = require('./yandex-utils');
 const tgUtils = require('./telegram-utils');
 
-// ===== КОНФИГУРАЦИЯ (неизменяемые переменные окружения) =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_URL;
 const PORT = process.env.PORT || 3000;
 
-// ===== ИНИЦИАЛИЗАЦИЯ =====
 const app = express();
 app.use(express.json());
 
@@ -27,15 +22,14 @@ const tasks = new Map();
 let adminChatId = null;
 const greetedUsers = new Map();
 
-// Устанавливаем YANDEX_TOKEN в yandex-utils (для случаев, когда он не передан в функции)
 yandex.setYandexToken(config.YANDEX_TOKEN);
 
-// ===== ФУНКЦИЯ ЛОГИРОВАНИЯ (обёртка для удобства) =====
+// ===== ФУНКЦИЯ ЛОГИРОВАНИЯ =====
 function log(message, level = 'info') {
     tgUtils.logMessage(adminChatId, bot, message, level, config.DIAGNOSTIC_MODE);
 }
 
-// ===== ОБРАБОТЧИК ВЕБХУКА =====
+// ===== ВЕБХУК =====
 app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 
@@ -52,59 +46,59 @@ app.post('/webhook', async (req, res) => {
 
     log(`📥 Вебхук: chatId=${chatId} (норм: ${chatIdStr}), type=${chatType}, user=${username}`, 'info');
 
-    // === ОБРАБОТКА ЛИЧНЫХ СООБЩЕНИЙ ===
+    // === ЛИЧНЫЕ СООБЩЕНИЯ ===
     if (chatType === 'private') {
-        // Если администратор уже назначен
         if (chatId === adminChatId) {
-            // Проверяем наличие маркера [[[ (команда конфига)
+            // Конфиг через [[[
             if (text.includes('[[')) {
                 const arr = config.extractConfig(text, log, adminChatId, bot, config.DIAGNOSTIC_MODE);
                 if (arr) {
                     try {
                         config.applyConfig(arr);
-                        // Обновляем YANDEX_TOKEN в yandex-utils
                         yandex.setYandexToken(config.YANDEX_TOKEN);
-                        await bot.sendMessage(adminChatId, '✅ Конфиг обновлён.');
+                        // Обновляем закреплённое сообщение
+                        await config.updatePinnedConfig(adminChatId, bot, arr, log, config.DIAGNOSTIC_MODE);
+                        await bot.sendMessage(adminChatId, '✅ Конфиг обновлён и закреплён.');
                     } catch (e) {
-                        await bot.sendMessage(adminChatId, `❌ Ошибка применения конфига: ${e.message}`);
+                        await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}`);
                     }
                 } else {
-                    await bot.sendMessage(adminChatId, '❌ Не удалось извлечь конфиг. Убедитесь, что он обёрнут в [[[ ... ]]] и содержит валидный JSON-массив из 14 элементов.');
+                    await bot.sendMessage(adminChatId, '❌ Не удалось извлечь конфиг.');
                 }
                 return;
             }
 
-            // Команда удаления закреплённого сообщения (если оно от бота)
-if (text.startsWith('/unpin')) {
-    try {
-        const chat = await bot.getChat(adminChatId);
-        const pinned = chat.pinned_message;
-        if (!pinned) {
-            await bot.sendMessage(adminChatId, 'ℹ️ Закреплённое сообщение не найдено.');
-            return;
-        }
-        // Удаляем сообщение (бот должен быть его автором)
-        await bot.deleteMessage(adminChatId, pinned.message_id);
-        await bot.sendMessage(adminChatId, '✅ Закреплённое сообщение удалено.');
-    } catch (e) {
-        await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}`);
-    }
-    return;
-}
-            
-            // Команда перезагрузки конфига из закреплённого сообщения
+            // /reload — перечитать закреплённое
             if (text.startsWith('/reload')) {
                 const loaded = await config.loadConfigFromPinned(adminChatId, bot, log, config.DIAGNOSTIC_MODE);
                 if (loaded) {
                     yandex.setYandexToken(config.YANDEX_TOKEN);
                     await bot.sendMessage(adminChatId, '✅ Конфиг перезагружен из закреплённого сообщения.');
                 } else {
-                    await bot.sendMessage(adminChatId, '❌ Не удалось загрузить конфиг. Убедитесь, что закреплённое сообщение содержит маркер [[[ ... ]]] и валидный массив.');
+                    await bot.sendMessage(adminChatId, '❌ Не удалось загрузить конфиг.');
                 }
                 return;
             }
 
-            // Если это не команда и не конфиг — обрабатываем как ссылку (домен не проверяем)
+            // /unpin — удалить все закреплённые сообщения
+            if (text.startsWith('/unpin')) {
+                try {
+                    let pinned = (await bot.getChat(adminChatId)).pinned_message;
+                    let count = 0;
+                    while (pinned && count < 20) {
+                        await bot.unpinChatMessage(adminChatId, pinned.message_id);
+                        // После открепления обновляем
+                        pinned = (await bot.getChat(adminChatId)).pinned_message;
+                        count++;
+                    }
+                    await bot.sendMessage(adminChatId, `✅ Откреплено ${count} сообщений.`);
+                } catch (e) {
+                    await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}`);
+                }
+                return;
+            }
+
+            // Обработка ссылки (без проверки домена)
             await tgUtils.processUrl(chatId, text, null, {
                 bot,
                 tasks,
@@ -119,7 +113,7 @@ if (text.startsWith('/unpin')) {
             return;
         }
 
-        // Если администратор ещё не назначен
+        // Если админ не назначен
         if (!adminChatId) {
             if (!greetedUsers.has(chatId)) {
                 greetedUsers.set(chatId, true);
@@ -132,7 +126,6 @@ if (text.startsWith('/unpin')) {
                 const mask = maskMatch[0];
                 if (tgUtils.isUsernameMatchMask(username, mask)) {
                     adminChatId = chatId;
-                    // Админ назначен — теперь логи будут управляться диагностикой
                     log(`Администратор назначен`, 'info');
                     let greeting = '✅ Вы назначились администратором бота.';
                     const configLoaded = await config.loadConfigFromPinned(adminChatId, bot, log, config.DIAGNOSTIC_MODE);
@@ -150,25 +143,25 @@ if (text.startsWith('/unpin')) {
                 }
             } else {
                 greetedUsers.set(chatId, true);
-                await bot.sendMessage(chatId, 'Здравствуйте! Отправьте маску вида `б*б` (например, d*n) для проверки.', { parse_mode: 'Markdown' });
+                await bot.sendMessage(chatId, 'Здравствуйте! Отправьте маску вида `б*б` (например, d*n).', { parse_mode: 'Markdown' });
                 return;
             }
         }
     }
 
-    // === ДАЛЕЕ ОБРАБОТКА КАНАЛОВ И ГРУПП ===
+    // === КАНАЛЫ И ГРУППЫ ===
     const isChannel = chatType === 'channel';
     const isGroup = chatType === 'group' || chatType === 'supergroup';
 
     if (isChannel) {
         if (!config.allowedChannels.includes(chatIdStr)) {
-            log(`❌ Канал ${chatId} (норм: ${chatIdStr}) не в списке разрешённых`, 'error');
+            log(`❌ Канал ${chatId} не разрешён`, 'error');
             return;
         }
     }
     if (isGroup) {
         if (!config.allowedGroups.includes(chatIdStr)) {
-            log(`❌ Группа ${chatId} (норм: ${chatIdStr}) не в списке разрешённых`, 'error');
+            log(`❌ Группа ${chatId} не разрешена`, 'error');
             return;
         }
     }
@@ -177,7 +170,7 @@ if (text.startsWith('/unpin')) {
     const isAllowedUser = (username && config.allowedUsernames.includes(username));
 
     if (isChannel && !message.from) {
-        log(`ℹ️ Анонимный пост в канале ${chatId}, обрабатываем`, 'info');
+        log(`ℹ️ Анонимный пост в канале ${chatId}`, 'info');
     } else {
         if (!isAdmin && !isAllowedUser) {
             log(`❌ Пользователь ${username} не разрешён`, 'error');
@@ -185,13 +178,13 @@ if (text.startsWith('/unpin')) {
         }
     }
 
-    // === ПРОВЕРКА ДОМЕНА (если чат не в списке исключений) ===
+    // Проверка домена
     const isDomainCheckSkipped = (isChannel && config.allowedChannelsNoDomainCheck.includes(chatIdStr)) ||
                                  (isGroup && config.allowedGroupsNoDomainCheck.includes(chatIdStr));
 
     const urlMatch = text.match(/https?:\/\/[^\s]+/);
     if (!urlMatch) {
-        log(`ℹ️ Ссылка не найдена в тексте`, 'info');
+        log(`ℹ️ Ссылка не найдена`, 'info');
         return;
     }
     const originalUrl = urlMatch[0];
@@ -208,10 +201,9 @@ if (text.startsWith('/unpin')) {
             return;
         }
     } else {
-        log(`⏩ Проверка домена пропущена (чат в списке исключений)`, 'info');
+        log(`⏩ Проверка домена пропущена`, 'info');
     }
 
-    // Определяем, можно ли редактировать сообщение
     const isForward = !!(message.forward_from || message.forward_from_chat || message.forward_date);
     const hasOnlyUrl = text.trim() === originalUrl;
     let editMessageId = null;
@@ -219,7 +211,6 @@ if (text.startsWith('/unpin')) {
         editMessageId = message.message_id;
     }
 
-    // Вызываем обработку ссылки
     await tgUtils.processUrl(chatId, text, editMessageId, {
         bot,
         tasks,
@@ -233,7 +224,7 @@ if (text.startsWith('/unpin')) {
     });
 });
 
-// ===== ЭНДПОИНТ /process =====
+// ===== /process =====
 app.get('/process', async (req, res) => {
     res.sendStatus(200);
 
@@ -278,7 +269,7 @@ app.get('/process', async (req, res) => {
                 }
             }
             if (content.origin) {
-                log(`🔗 Оригинал (не отправлен пользователю): ${content.origin}`, 'info');
+                log(`🔗 Оригинал (не отправлен): ${content.origin}`, 'info');
             }
             for (const [key, val] of tasks.entries()) {
                 if (val.shortUrl === shortUrl && val.chatId === chatId) {
@@ -289,10 +280,9 @@ app.get('/process', async (req, res) => {
             return;
         }
     } catch (e) {
-        log(`Ошибка при проверке контента: ${e.message}`, 'error');
+        log(`Ошибка проверки контента: ${e.message}`, 'error');
     }
 
-    // Если контент не готов, планируем следующую проверку
     let nextAttempt = attemptNum + 1;
     let nextPhase = currentPhase;
 
@@ -340,15 +330,12 @@ app.get('/process', async (req, res) => {
     }, interval);
 });
 
-// ===== ЭНДПОИНТ /ping =====
-app.get('/ping', (req, res) => {
-    res.sendStatus(200);
-});
+// ===== /ping, /status =====
+app.get('/ping', (req, res) => res.sendStatus(200));
 
-// ===== ЭНДПОИНТ /status =====
 app.get('/status', (req, res) => {
     res.json({
-        version: '1.1.3',
+        version: '1.1.5',
         uptime: process.uptime(),
         tasksCount: tasks.size,
         activeTasks: Array.from(tasks.keys()),
@@ -366,18 +353,15 @@ function startPingScheduler() {
     };
 
     function doPing() {
-        axios.get(`${RENDER_URL}/ping`)
-            .catch(err => {
-                // Критическая ошибка — выводим в консоль и, если админ есть, отправляем через logMessage
-                console.error('Дежурный пинг не удался:', err.message);
-                if (adminChatId) {
-                    tgUtils.logMessage(adminChatId, bot, `⚠️ Дежурный пинг не удался: ${err.message}`, 'error', config.DIAGNOSTIC_MODE);
-                }
-            });
+        axios.get(`${RENDER_URL}/ping`).catch(err => {
+            console.error('Дежурный пинг не удался:', err.message);
+            if (adminChatId) {
+                tgUtils.logMessage(adminChatId, bot, `⚠️ Дежурный пинг не удался: ${err.message}`, 'error', config.DIAGNOSTIC_MODE);
+            }
+        });
         const next = randomInterval();
         setTimeout(doPing, next);
     }
-
     setTimeout(doPing, 10000);
 }
 
@@ -418,10 +402,10 @@ async function setWebhook(url) {
 }
 
 app.listen(PORT, async () => {
-    console.log(`Бот запущен, версия 1.1.3, порт ${PORT}`);
+    console.log(`Бот запущен, версия 1.1.5, порт ${PORT}`);
     const webhookUrl = `${RENDER_URL}/webhook`;
     await setWebhook(webhookUrl);
     startPingScheduler();
     console.log(`Диагностический режим: ${config.DIAGNOSTIC_MODE ? 'ВКЛЮЧЁН' : 'ВЫКЛЮЧЕН'}`);
-    console.log('Бот готов к работе. Напишите в личку "Здравствуйте!" для начала.');
+    console.log('Бот готов к работе.');
 });
