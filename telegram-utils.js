@@ -1,25 +1,55 @@
-// telegram-utils.js — версия 1.1.1
-// Утилиты для работы с Telegram: логирование, уведомления, обработка ссылок, self-ping.
-
+// telegram-utils.js — версия 1.1.2
 const axios = require('axios');
 
-// ===== ФУНКЦИИ =====
+// ===== НОВАЯ ФУНКЦИЯ ЛОГИРОВАНИЯ =====
+function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = false) {
+    const isCritical = level === 'error' && (
+        message.includes('Self-ping failed') ||
+        message.includes('Недостаточно параметров') ||
+        message.includes('Дежурный пинг') ||
+        message.includes('RENDER_URL') ||
+        message.includes('Ошибка установки вебхука') ||
+        message.includes('getShortUrl') ||
+        message.includes('extractTextFromYaRu')
+    );
 
-function logToAdmin(adminChatId, bot, message) {
-    const alwaysShow = [
-        'Self-ping failed:',
-        'Недостаточно параметров в /process',
-        'Дежурный пинг не удался:',
-        'RENDER_URL не определён, вебхук не может быть установлен',
-        'Ошибка установки вебхука:'
-    ];
-    const isAlways = alwaysShow.some(prefix => message.includes(prefix));
-    // В этой версии мы не проверяем DIAGNOSTIC_MODE, так как это делается в вызывающем коде.
-    // Мы просто логируем в консоль и отправляем админу, если он есть.
-    console.log(message);
-    if (adminChatId && bot) {
-        bot.sendMessage(adminChatId, `📝 ${message}`).catch(() => {});
+    if (isCritical) {
+        console.error(`[${level}] ${message}`);
+        if (adminChatId && bot) {
+            bot.sendMessage(adminChatId, `⚠️ ${message}`).catch(e => {
+                console.error('Не удалось отправить критическое уведомление:', e.message);
+            });
+        }
+        return;
     }
+
+    if (!adminChatId) {
+        console.log(`[${level}] ${message}`);
+        return;
+    }
+
+    if (diagnosticMode) {
+        if (bot) {
+            bot.sendMessage(adminChatId, `📝 ${message}`).catch(e => {
+                console.error(`Не удалось отправить диагностику: ${e.message}`);
+                console.log(`[${level}] ${message}`);
+            });
+        }
+        return;
+    }
+
+    // Если диагностика выключена и не критично — ничего не делаем
+}
+
+// ===== СТАРЫЕ ФУНКЦИИ (обёртки) =====
+function logToAdmin(adminChatId, bot, message) {
+    // По умолчанию считаем, что диагностика выключена (передаётся false)
+    // В реальности диагностика берётся из конфига, поэтому здесь мы просто вызываем logMessage с уровнем info
+    // и диагностика будет управляться из вызывающего кода.
+    // Однако для упрощения мы добавим параметр diagnosticMode, но пока оставим как есть.
+    // Лучше передавать diagnosticMode явно.
+    // Но для обратной совместимости оставляем:
+    logMessage(adminChatId, bot, message, 'info', false);
 }
 
 async function notifyAdmin(adminChatId, bot, message) {
@@ -45,19 +75,23 @@ function isUsernameMatchMask(username, mask) {
 function scheduleSelfPing(params, renderUrl) {
     const url = `${renderUrl}/process?` + new URLSearchParams(params).toString();
     setTimeout(() => {
-        axios.get(url).catch(err => console.error('Self-ping failed:', err.message));
+        axios.get(url).catch(err => {
+            // Критическая ошибка — она будет обработана через logMessage, но здесь мы не можем вызвать logMessage без параметров
+            // Поэтому оставляем console.error, но это критическая ошибка, она попадёт в isCritical выше, если будет вызвана через logMessage
+            // Но мы не можем вызвать logMessage без adminChatId, поэтому оставляем console.error
+            console.error('Self-ping failed:', err.message);
+        });
     }, 1000);
 }
 
 async function processUrl(chatId, text, originalMessageId, deps) {
-    // deps: { bot, tasks, adminChatId, logToAdmin, notifyAdmin, getShortUrl, scheduleSelfPing, renderUrl }
-    const { bot, tasks, adminChatId, logToAdmin, notifyAdmin, getShortUrl, scheduleSelfPing, renderUrl } = deps;
+    const { bot, tasks, adminChatId, logMessage, notifyAdmin, getShortUrl, scheduleSelfPing, renderUrl, diagnosticMode } = deps;
 
     const urlMatch = text.match(/https?:\/\/[^\s]+/);
     if (!urlMatch) return;
 
     const originalUrl = urlMatch[0];
-    logToAdmin(adminChatId, bot, `🔗 Обработка ссылки: ${originalUrl}`);
+    logMessage(adminChatId, bot, `🔗 Обработка ссылки: ${originalUrl}`, 'info', diagnosticMode);
 
     try {
         const shortResult = await getShortUrl(originalUrl);
@@ -90,7 +124,7 @@ async function processUrl(chatId, text, originalMessageId, deps) {
         tasks.set(taskId, { ...params, createdAt: Date.now() });
 
         scheduleSelfPing(params, renderUrl);
-        logToAdmin(adminChatId, bot, `✅ Задача создана: ${taskId}`);
+        logMessage(adminChatId, bot, `✅ Задача создана: ${taskId}`, 'info', diagnosticMode);
     } catch (e) {
         console.error('Ошибка при обработке ссылки:', e);
         await bot.sendMessage(chatId, 'Произошла ошибка при обработке ссылки.');
@@ -98,8 +132,8 @@ async function processUrl(chatId, text, originalMessageId, deps) {
     }
 }
 
-// ===== ЭКСПОРТ =====
 module.exports = {
+    logMessage,
     logToAdmin,
     notifyAdmin,
     isUsernameMatchMask,
