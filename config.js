@@ -21,6 +21,7 @@ let PING_MAX_INTERVAL = 13 * 60 * 1000;
 // ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ЛОГИРОВАНИЯ (если не передана, использует console) =====
 function safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
                     bot.sendMessage(adminChatId, `[safeLog] called with level=${level}, diagnosticMode=${diagnosticMode}, logFn=${!!logFn}`).catch(() => {});
+  bot.sendMessage(adminChatId, `message=${message}`).catch(() => {});
     if (logFn) {
         logFn(adminChatId, bot, message, level, diagnosticMode);
     } else {
