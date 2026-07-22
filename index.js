@@ -298,7 +298,9 @@ if (text.trim().startsWith('[')) {
         cleanText = cleanText.replace(/^\uFEFF/, '');
         
         const arr = JSON.parse(cleanText);
-        // ... дальше ваша логика
+                    applyConfig(arr);
+                    await updatePinnedConfig(arr);
+                    await bot.sendMessage(adminChatId, '✅ Конфиг обновлён и закреплён.');
     } catch (e) {
         // Выводим ошибку с текстом, который не удалось распарсить
         console.error('Ошибка парсинга JSON. Текст, вызвавший ошибку:');
