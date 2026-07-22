@@ -20,10 +20,10 @@ let PING_MAX_INTERVAL = 13 * 60 * 1000;
 
 // ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ЛОГИРОВАНИЯ (если не передана, использует console) =====
 function safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
-                    bot.sendMessage(adminChatId, `[safeLog] called with level=${level}, diagnosticMode=${diagnosticMode}, logFn=${!!logFn}`).catch(() => {});
+
   bot.sendMessage(adminChatId, `message=${message}`).catch(() => {});
     if (logFn) {
-        logFn(adminChatId, bot, message, level, diagnosticMode);
+        logFn(message, level);
     } else {
         // fallback: выводим в консоль
         console.log(`[${level}] ${message}`);
@@ -123,10 +123,9 @@ async function loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMo
             }
             return false;
         }
-        bot.sendMessage(adminChatId, pinned.text).catch(() => {});
-        bot.sendMessage(adminChatId, `конфиг: ${pinned.text}`).catch(() => {});
+
         safeLog(adminChatId, bot, `loadConfigFromPinned: текст закреплённого сообщения получен, длина = ${pinned.text.length}`, 'info', diagnosticMode, logFn);
-      bot.sendMessage(adminChatId, `loadConfigFromPinned: текст закреплённого сообщения получен, длина = ${pinned.text.length}`).catch(() => {});
+
         const arr = extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
         if (arr) {
             applyConfig(arr);
