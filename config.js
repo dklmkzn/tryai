@@ -10,7 +10,7 @@ let allowedGroups = [];
 let allowedChannelsNoDomainCheck = [];
 let allowedGroupsNoDomainCheck = [];
 let YANDEX_TOKEN = process.env.YANDEX_TOKEN || '';
-let DIAGNOSTIC_MODE = process.env.DIAGNOSTIC_ENABLED === 'true' || false;
+let DIAGNOSTIC_MODE = process.env.DIAGNOSTIC_ENABLED === 'true' || true;
 let ACTIVE_INTERVAL = 3000;
 let MAX_ACTIVE_ATTEMPTS = 100;
 let LONG_INTERVAL = 60000;
@@ -133,6 +133,7 @@ async function loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMo
         } else {
             safeLog(adminChatId, bot, 'loadConfigFromPinned: не удалось извлечь массив из закреплённого сообщения', 'warn', diagnosticMode, logFn);
             if (adminChatId) {
+                bot.sendMessage(adminChatId, '❌ Не удалось извлечь массив из закреплённого сообщения. Проверьте, что он содержит маркер [[[ ... ]]] или валидный JSON-массив.').catch(() => {});
                 bot.sendMessage(adminChatId, '❌ Не удалось извлечь массив из закреплённого сообщения. Проверьте, что он содержит маркер [[[ ... ]]] или валидный JSON-массив.').catch(() => {});
             }
             return false;
