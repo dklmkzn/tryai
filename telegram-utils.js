@@ -1,7 +1,10 @@
 // telegram-utils.js — версия 1.1.2
+// Утилиты для работы с Telegram: логирование, уведомления, обработка ссылок, self-ping.
+// Логирование через logMessage (единая точка).
+
 const axios = require('axios');
 
-// ===== НОВАЯ ФУНКЦИЯ ЛОГИРОВАНИЯ =====
+// ===== ОСНОВНАЯ ФУНКЦИЯ ЛОГИРОВАНИЯ =====
 function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = false) {
     const isCritical = level === 'error' && (
         message.includes('Self-ping failed') ||
@@ -41,14 +44,8 @@ function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = 
     // Если диагностика выключена и не критично — ничего не делаем
 }
 
-// ===== СТАРЫЕ ФУНКЦИИ (обёртки) =====
+// ===== ОБЁРТКА ДЛЯ СОВМЕСТИМОСТИ =====
 function logToAdmin(adminChatId, bot, message) {
-    // По умолчанию считаем, что диагностика выключена (передаётся false)
-    // В реальности диагностика берётся из конфига, поэтому здесь мы просто вызываем logMessage с уровнем info
-    // и диагностика будет управляться из вызывающего кода.
-    // Однако для упрощения мы добавим параметр diagnosticMode, но пока оставим как есть.
-    // Лучше передавать diagnosticMode явно.
-    // Но для обратной совместимости оставляем:
     logMessage(adminChatId, bot, message, 'info', false);
 }
 
@@ -94,7 +91,7 @@ async function processUrl(chatId, text, originalMessageId, deps) {
     logMessage(adminChatId, bot, `🔗 Обработка ссылки: ${originalUrl}`, 'info', diagnosticMode);
 
     try {
-        const shortResult = await getShortUrl(originalUrl);
+        const shortResult = await getShortUrl(originalUrl, null, logMessage, adminChatId, bot, diagnosticMode);
         if (shortResult.status === 'error') {
             await bot.sendMessage(chatId, '❌ Не удалось получить ссылку на пересказ.');
             await notifyAdmin(adminChatId, bot, `Ошибка получения shortUrl: ${originalUrl} - ${shortResult.message}`);
