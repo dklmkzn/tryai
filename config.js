@@ -19,9 +19,9 @@ let PING_MAX_INTERVAL = 13 * 60 * 1000;
 
 // ===== ЛОГИРОВАНИЕ =====
 function safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
-    //bot.sendMessage(adminChatId, message, diagnosticMode);
+    //bot.sendMessage(adminChatId, message);
     if (logFn) {
-        logFn(message, level);
+        logFn(message, level, diagnosticMode);
     } else {
         console.log(`[${level}] ${message}`);
     }
