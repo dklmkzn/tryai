@@ -278,6 +278,7 @@ app.post('/webhook', async (req, res) => {
     if (chatType === 'private') {
         if (chatId === adminChatId) {
 if (text.trim().startsWith('[')) {
+    let cleanText = '';
     // Диагностика: выводим точный текст сообщения
     console.log('=== ТЕКСТ СООБЩЕНИЯ ===');
     console.log(text);
