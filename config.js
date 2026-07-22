@@ -138,6 +138,32 @@ async function updatePinnedConfig(adminChatId, bot, arr, logFn = null, diagnosti
             safeLog(adminChatId, bot, `Не удалось закрепить сообщение: ${e.message}`, 'warn', diagnosticMode, logFn);
         }
 
+                // === ДОБАВЛЕННАЯ ПРОВЕРКА ===
+        // Ждём 1 секунду, чтобы Telegram успел обновить закреп
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Проверяем, что закрепилось именно наше сообщение
+        const updatedChat = await bot.getChat(adminChatId);
+        const newPinned = updatedChat.pinned_message;
+        if (newPinned && newPinned.message_id === sent.message_id) {
+            safeLog(adminChatId, bot, 'Проверка: закреплённое сообщение совпадает с отправленным', 'info', diagnosticMode, logFn);
+        } else {
+            // Если закрепилось что-то другое или не закрепилось ничего
+            safeLog(adminChatId, bot, `Проверка: закреплённое сообщение не совпадает! Ожидалось message_id=${sent.message_id}, получено ${newPinned ? newPinned.message_id : 'null'}`, 'warn', diagnosticMode, logFn);
+            // Можно попробовать закрепить повторно
+            if (newPinned && newPinned.message_id !== sent.message_id) {
+                try {
+                    await bot.unpinChatMessage(adminChatId);
+                    await bot.pinChatMessage(adminChatId, sent.message_id);
+                    safeLog(adminChatId, bot, 'Повторная попытка закрепления выполнена', 'info', diagnosticMode, logFn);
+                } catch (e2) {
+                    safeLog(adminChatId, bot, `Повторная попытка закрепления не удалась: ${e2.message}`, 'error', diagnosticMode, logFn);
+                }
+            }
+        }
+        // ==========================
+
+
         return true;
     } catch (e) {
         safeLog(adminChatId, bot, `Ошибка в updatePinnedConfig: ${e.message}`, 'error', diagnosticMode, logFn);
