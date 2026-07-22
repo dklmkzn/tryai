@@ -277,19 +277,35 @@ app.post('/webhook', async (req, res) => {
     // === ОБРАБОТКА ЛИЧНЫХ СООБЩЕНИЙ ===
     if (chatType === 'private') {
         if (chatId === adminChatId) {
-            if (text.trim().startsWith('[')) {
-                try {
-                    const arr = JSON.parse(text);
-                    if (!Array.isArray(arr) || arr.length !== 14) {
-                        throw new Error('Массив должен содержать ровно 14 элементов');
-                    }
-                    applyConfig(arr);
-                    await bot.sendMessage(adminChatId, '✅ Конфиг обновлён и закреплён.');
-                } catch (e) {
-                    await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}`);
-                }
-                return;
-            }
+if (text.trim().startsWith('[')) {
+    // Диагностика: выводим точный текст сообщения
+    console.log('=== ТЕКСТ СООБЩЕНИЯ ===');
+    console.log(text);
+    console.log('=== ДЛИНА: ' + text.length);
+    console.log('=== ПЕРВЫЕ 20 СИМВОЛОВ: ' + JSON.stringify(text.substring(0, 20)));
+    console.log('=== ПОСЛЕДНИЕ 20 СИМВОЛОВ: ' + JSON.stringify(text.substring(text.length - 20)));
+    
+    try {
+        // Попытка очистить текст от возможных BOM и лишних пробелов
+        let cleanText = text.trim();
+        // Если текст обёрнут в кавычки, снимаем их
+        if (cleanText.startsWith('"') && cleanText.endsWith('"')) {
+            cleanText = cleanText.substring(1, cleanText.length - 1);
+        }
+        // Заменяем возможные неразрывные пробелы на обычные
+        cleanText = cleanText.replace(/\u00A0/g, ' ');
+        // Если есть символы BOM (U+FEFF) — удаляем
+        cleanText = cleanText.replace(/^\uFEFF/, '');
+        
+        const arr = JSON.parse(cleanText);
+        // ... дальше ваша логика
+    } catch (e) {
+        // Выводим ошибку с текстом, который не удалось распарсить
+        console.error('Ошибка парсинга JSON. Текст, вызвавший ошибку:');
+        console.error(cleanText);
+        await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}\nПроверьте текст сообщения.`);
+    }
+}
             return;
         }
 
