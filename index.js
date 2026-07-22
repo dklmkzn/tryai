@@ -300,7 +300,6 @@ if (text.trim().startsWith('[')) {
         
         const arr = JSON.parse(cleanText);
                     applyConfig(arr);
-                    await updatePinnedConfig(arr);
                     await bot.sendMessage(adminChatId, '✅ Конфиг обновлён и закреплён.');
     } catch (e) {
         // Выводим ошибку с текстом, который не удалось распарсить
