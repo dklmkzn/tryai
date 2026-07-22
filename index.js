@@ -70,7 +70,7 @@ app.post('/webhook', async (req, res) => {
 
             // /reload — перечитать закреплённое
             if (text.startsWith('/reload')) {
-                const loaded = await config.loadConfigFromPinned(adminChatId, bot, log, config.DIAGNOSTIC_MODE);
+                const loaded = await config.loadConfigFromPinned(adminChatId, bot, log, true);
                 if (loaded) {
                     yandex.setYandexToken(config.YANDEX_TOKEN);
                     await bot.sendMessage(adminChatId, '✅ Конфиг перезагружен из закреплённого сообщения.');
