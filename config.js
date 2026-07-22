@@ -55,6 +55,7 @@ function extractConfig(text, logFn = null, adminChatId = null, bot = null, diagn
             safeLog(adminChatId, bot, 'extractConfig: найден JSON-массив', 'info', diagnosticMode, logFn);
         } else {
             safeLog(adminChatId, bot, 'extractConfig: JSON-массив не найден', 'warn', diagnosticMode, logFn);
+            safeLog(adminChatId, bot, 'extractConfig: ${text}', 'warn', diagnosticMode, logFn).catch(() => {});;
             return null;
         }
     }
