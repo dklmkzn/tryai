@@ -19,6 +19,7 @@ let PING_MAX_INTERVAL = 13 * 60 * 1000;
 
 // ===== ЛОГИРОВАНИЕ =====
 function safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
+    await bot.sendMessage(adminChatId, `❌ Ошибка: ${message}`);
     if (logFn) {
         logFn(message, level);
     } else {
@@ -185,6 +186,9 @@ async function loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMo
             return false;
         }
         safeLog(adminChatId, bot, `Текст закреплённого сообщения: ${pinned.text.substring(0, 100)}...`, 'info', diagnosticMode, logFn);
+
+
+        
         const arr = extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
         if (arr) {
             applyConfig(arr);
