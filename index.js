@@ -1,14 +1,20 @@
-// ===== РАЗРЕШЁННЫЕ ДОМЕНЫ, ПОЛЬЗОВАТЕЛИ (username), КАНАЛЫ И ГРУППЫ (ID) =====
-const allowedDomains = ['nplus1.ru', 'naked-science.ru', '300.ya.ru'];
-const allowedUsernames = []; // пока пусто — только админ имеет доступ
-const allowedChannels = ['-1001390761594', '-1002753237331', '-1002872429524', '-1002507851276'];   // замените на реальные ID каналов
-const allowedGroups = [];     // замените на реальные ID групп
+// index.js — версия 1.0.8
 
-// Списки исключений для проверки домена (в этих каналах/группах домен не проверяем даже при наличии текста)
-const allowedChannelsNoDomainCheck = ['-1001390761594']; // замените
-const allowedGroupsNoDomainCheck = [''];   // замените
-
-// index.js — версия 1.0.5
+// ===== ИНДИВИДУАЛЬНЫЕ НАСТРОЙКИ (переменные по умолчанию) =====
+let allowedDomains = ['nplus1.ru', 'naked-science.ru', '300.ya.ru'];
+let allowedUsernames = [];
+let allowedChannels = [];
+let allowedGroups = [];
+let allowedChannelsNoDomainCheck = [];
+let allowedGroupsNoDomainCheck = [];
+let YANDEX_TOKEN = process.env.YANDEX_TOKEN || '';
+let DIAGNOSTIC_MODE = process.env.DIAGNOSTIC_ENABLED === 'true' || false;
+let ACTIVE_INTERVAL = 3000;
+let MAX_ACTIVE_ATTEMPTS = 100;
+let LONG_INTERVAL = 60000;
+let MAX_LONG_ATTEMPTS = 20;
+let PING_MIN_INTERVAL = 10 * 60 * 1000;
+let PING_MAX_INTERVAL = 13 * 60 * 1000;
 
 // ===== ИМПОРТЫ =====
 const express = require('express');
@@ -16,23 +22,10 @@ const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
 const cheerio = require('cheerio');
 
-// ===== ОСТАЛЬНАЯ КОНФИГУРАЦИЯ (переменные окружения и параметры) =====
+// ===== КОНФИГУРАЦИЯ (неизменяемые переменные окружения) =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const ADMIN_USERNAME_MASK = process.env.ADMIN_USERNAME_MASK || 'd*n';
-const YANDEX_TOKEN = process.env.YANDEX_TOKEN;
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_URL;
 const PORT = process.env.PORT || 3000;
-const DIAGNOSTIC_MODE = process.env.DIAGNOSTIC_ENABLED === 'true' || false;
-
-// Параметры проверки готовности контента
-const ACTIVE_INTERVAL = 3000;
-const MAX_ACTIVE_ATTEMPTS = 100;
-const LONG_INTERVAL = 60000;
-const MAX_LONG_ATTEMPTS = 20;
-
-// Параметры дежурного пинга
-const PING_MIN_INTERVAL = 10 * 60 * 1000;
-const PING_MAX_INTERVAL = 13 * 60 * 1000;
 
 // ===== ИНИЦИАЛИЗАЦИЯ =====
 const app = express();
@@ -41,8 +34,9 @@ app.use(express.json());
 const bot = new TelegramBot(BOT_TOKEN);
 const tasks = new Map();
 let adminChatId = null;
+const greetedUsers = new Map();
 
-// ===== ЛОГИРОВАНИЕ (с учётом флага диагностики) =====
+// ===== ЛОГИРОВАНИЕ =====
 function logToAdmin(message) {
     const alwaysShow = [
         'Self-ping failed:',
@@ -63,11 +57,18 @@ function logToAdmin(message) {
 
 // ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 
-function isUsernameMatchMask(username) {
-    if (!username || !ADMIN_USERNAME_MASK) return false;
-    const first = ADMIN_USERNAME_MASK[0];
-    const last = ADMIN_USERNAME_MASK[ADMIN_USERNAME_MASK.length - 1];
+function isUsernameMatchMask(username, mask) {
+    if (!username || !mask) return false;
+    if (mask.length !== 3 || mask[1] !== '*') return false;
+    const first = mask[0];
+    const last = mask[2];
     return username[0] === first && username[username.length - 1] === last;
+}
+
+function normalizeId(id) {
+    const str = id.toString();
+    if (str.startsWith('-100')) return str.substring(4);
+    return str;
 }
 
 async function notifyAdmin(message) {
@@ -82,8 +83,74 @@ async function notifyAdmin(message) {
     }
 }
 
-// ===== ФУНКЦИИ ДЛЯ РАБОТЫ С 300.YA.RU =====
+// ===== ПРИМЕНЕНИЕ КОНФИГА =====
+function applyConfig(arr) {
+    if (!Array.isArray(arr) || arr.length !== 14) {
+        throw new Error('Массив должен содержать ровно 14 элементов');
+    }
+    allowedDomains = arr[0] || [];
+    allowedUsernames = arr[1] || [];
+    allowedChannels = arr[2] || [];
+    allowedGroups = arr[3] || [];
+    allowedChannelsNoDomainCheck = arr[4] || [];
+    allowedGroupsNoDomainCheck = arr[5] || [];
+    YANDEX_TOKEN = arr[6] || '';
+    DIAGNOSTIC_MODE = typeof arr[7] === 'boolean' ? arr[7] : false;
+    ACTIVE_INTERVAL = typeof arr[8] === 'number' ? arr[8] : 3000;
+    MAX_ACTIVE_ATTEMPTS = typeof arr[9] === 'number' ? arr[9] : 100;
+    LONG_INTERVAL = typeof arr[10] === 'number' ? arr[10] : 60000;
+    MAX_LONG_ATTEMPTS = typeof arr[11] === 'number' ? arr[11] : 20;
+    PING_MIN_INTERVAL = typeof arr[12] === 'number' ? arr[12] : 10 * 60 * 1000;
+    PING_MAX_INTERVAL = typeof arr[13] === 'number' ? arr[13] : 13 * 60 * 1000;
+    logToAdmin('✅ Конфиг применён');
+}
 
+// ===== ЗАГРУЗКА ИЗ ЗАКРЕПЛЁННОГО СООБЩЕНИЯ =====
+async function loadConfigFromPinned() {
+    if (!adminChatId) return false;
+    try {
+        const chat = await bot.getChat(adminChatId);
+        const pinned = chat.pinned_message;
+        if (pinned && pinned.text) {
+            const match = pinned.text.match(/(\[[\s\S]*?\])/);
+            if (match) {
+                const arr = JSON.parse(match[1]);
+                applyConfig(arr);
+                logToAdmin('✅ Конфиг загружен из закреплённого сообщения');
+                return true;
+            }
+        }
+    } catch (e) {
+        console.error('Ошибка загрузки конфига из закреплённого:', e);
+    }
+    return false;
+}
+
+// ===== ОБНОВЛЕНИЕ ЗАКРЕПЛЁННОГО =====
+async function updatePinnedConfig(arr) {
+    if (!adminChatId) return false;
+    try {
+        const text = `Конфиг бота (закреплено):\n\`\`\`json\n${JSON.stringify(arr)}\n\`\`\``;
+        const chat = await bot.getChat(adminChatId);
+        if (chat.pinned_message) {
+            await bot.editMessageText(text, {
+                chat_id: adminChatId,
+                message_id: chat.pinned_message.message_id,
+                parse_mode: 'Markdown'
+            });
+        } else {
+            const sent = await bot.sendMessage(adminChatId, text, { parse_mode: 'Markdown' });
+            await bot.pinChatMessage(adminChatId, sent.message_id);
+        }
+        logToAdmin('✅ Закреплённое сообщение обновлено');
+        return true;
+    } catch (e) {
+        console.error('Ошибка обновления закреплённого:', e);
+        return false;
+    }
+}
+
+// ===== ФУНКЦИИ ДЛЯ РАБОТЫ С 300.YA.RU =====
 async function getShortUrl(articleUrl) {
     if (articleUrl.includes('300.ya.ru')) {
         return { status: 'success', sharing_url: articleUrl };
@@ -156,7 +223,6 @@ function parseContent(fullText) {
         .replace(/Для улучшения качества[\s\S]*$/im, '')
         .trim();
 
-    // Удаляем строку "Данный формат временно недоступен для этого видео" (если есть)
     cleanText = cleanText.replace(/Данный формат временно недоступен для этого видео/gi, '').trim();
 
     return { title: titleText, content: cleanText };
@@ -228,39 +294,79 @@ app.post('/webhook', async (req, res) => {
     const text = message.text;
     const username = message.from?.username || 'без username';
     const userId = message.from?.id;
+    const chatIdStr = normalizeId(chatId);
 
-    logToAdmin(`📥 Вебхук: chatId=${chatId}, type=${chatType}, user=${username}, text=${text.substring(0, 80)}${text.length > 80 ? '...' : ''}`);
+    logToAdmin(`📥 Вебхук: chatId=${chatId} (норм: ${chatIdStr}), type=${chatType}, user=${username}, text=${text.substring(0, 80)}${text.length > 80 ? '...' : ''}`);
 
-    // Назначение администратора (только в личке)
-    if (!adminChatId && chatType === 'private') {
-        if (username && isUsernameMatchMask(username)) {
-            adminChatId = chatId;
-            console.log(`Администратор назначен (chat_id: ${adminChatId})`);
-            await bot.sendMessage(adminChatId, '✅ Вы назначились администратором бота.');
-        } else {
-            if (username) {
-                await bot.sendMessage(chatId, '❌ Ваш username не подходит для роли администратора.');
+    // === ОБРАБОТКА ЛИЧНЫХ СООБЩЕНИЙ ===
+    if (chatType === 'private') {
+        if (chatId === adminChatId) {
+            if (text.trim().startsWith('[')) {
+                try {
+                    const arr = JSON.parse(text);
+                    if (!Array.isArray(arr) || arr.length !== 14) {
+                        throw new Error('Массив должен содержать ровно 14 элементов');
+                    }
+                    applyConfig(arr);
+                    await updatePinnedConfig(arr);
+                    await bot.sendMessage(adminChatId, '✅ Конфиг обновлён и закреплён.');
+                } catch (e) {
+                    await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}`);
+                }
+                return;
             }
             return;
         }
+
+        if (!adminChatId) {
+            if (!greetedUsers.has(chatId)) {
+                greetedUsers.set(chatId, true);
+                await bot.sendMessage(chatId, 'Здравствуйте!');
+                return;
+            }
+
+            const maskMatch = text.match(/^([a-zA-Zа-яА-Я])\*([a-zA-Zа-яА-Я])$/);
+            if (maskMatch) {
+                const mask = maskMatch[0];
+                if (isUsernameMatchMask(username, mask)) {
+                    adminChatId = chatId;
+                    console.log(`Администратор назначен (chat_id: ${adminChatId})`);
+                    let greeting = '✅ Вы назначились администратором бота.';
+                    const configLoaded = await loadConfigFromPinned();
+                    if (configLoaded) {
+                        greeting += '\nКонфиг загружен из закреплённого сообщения.';
+                    } else {
+                        greeting += '\nКонфиг не найден, используются значения по умолчанию.';
+                    }
+                    await bot.sendMessage(adminChatId, greeting);
+                    return;
+                } else {
+                    await bot.sendMessage(chatId, '❌ Маска не подходит для вашего username. Попробуйте ещё раз.');
+                    return;
+                }
+            } else {
+                greetedUsers.set(chatId, true);
+                await bot.sendMessage(chatId, 'Здравствуйте! Отправьте маску вида `б*б` (например, d*n) для проверки.', { parse_mode: 'Markdown' });
+                return;
+            }
+        }
     }
 
-    // === ПРОВЕРКА РАЗРЕШЁННЫХ КАНАЛОВ/ГРУПП И АВТОРА ===
+    // === ПРОВЕРКА РАЗРЕШЁННЫХ КАНАЛОВ/ГРУПП (с нормализацией ID) ===
     const isChannel = chatType === 'channel';
     const isGroup = chatType === 'group' || chatType === 'supergroup';
-    const isPrivate = chatType === 'private';
 
     if (isChannel) {
-        if (!allowedChannels.includes(chatId.toString())) {
-            logToAdmin(`❌ Канал ${chatId} не в списке разрешённых (allowedChannels: ${JSON.stringify(allowedChannels)})`);
+        if (!allowedChannels.includes(chatIdStr)) {
+            logToAdmin(`❌ Канал ${chatId} (норм: ${chatIdStr}) не в списке разрешённых (allowedChannels: ${JSON.stringify(allowedChannels)})`);
             return;
         } else {
             logToAdmin(`✅ Канал ${chatId} разрешён`);
         }
     }
     if (isGroup) {
-        if (!allowedGroups.includes(chatId.toString())) {
-            logToAdmin(`❌ Группа ${chatId} не в списке разрешённых (allowedGroups: ${JSON.stringify(allowedGroups)})`);
+        if (!allowedGroups.includes(chatIdStr)) {
+            logToAdmin(`❌ Группа ${chatId} (норм: ${chatIdStr}) не в списке разрешённых (allowedGroups: ${JSON.stringify(allowedGroups)})`);
             return;
         } else {
             logToAdmin(`✅ Группа ${chatId} разрешена`);
@@ -291,8 +397,7 @@ app.post('/webhook', async (req, res) => {
     const originalUrl = urlMatch[0];
     logToAdmin(`🔗 Исходный URL: ${originalUrl}`);
 
-    // === ПРОВЕРКА ДОМЕНА (если чат не в списке исключений) ===
-    const chatIdStr = chatId.toString();
+    // === ПРОВЕРКА ДОМЕНА (с нормализацией ID) ===
     const isDomainCheckSkipped = (isChannel && allowedChannelsNoDomainCheck.includes(chatIdStr)) ||
                                  (isGroup && allowedGroupsNoDomainCheck.includes(chatIdStr));
 
@@ -450,7 +555,7 @@ app.get('/ping', (req, res) => {
 
 app.get('/status', (req, res) => {
     res.json({
-        version: '1.0.5',
+        version: '1.0.8',
         uptime: process.uptime(),
         tasksCount: tasks.size,
         activeTasks: Array.from(tasks.keys()),
@@ -500,10 +605,10 @@ async function setWebhook(url) {
 }
 
 app.listen(PORT, async () => {
-    console.log(`Бот запущен, версия 1.0.5, порт ${PORT}`);
+    console.log(`Бот запущен, версия 1.0.8, порт ${PORT}`);
     const webhookUrl = `${RENDER_URL}/webhook`;
     await setWebhook(webhookUrl);
     startPingScheduler();
-    console.log(`Ожидание первого сообщения от пользователя с маской "${ADMIN_USERNAME_MASK}"`);
     console.log(`Диагностический режим: ${DIAGNOSTIC_MODE ? 'ВКЛЮЧЁН' : 'ВЫКЛЮЧЕН'}`);
+    console.log('Бот готов к работе. Напишите в личку "Здравствуйте!" для начала.');
 });
