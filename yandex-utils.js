@@ -13,6 +13,7 @@ function setYandexToken(token) {
     // Диагностический вывод (будет виден в консоли до назначения админа или через logFn)
     console.log(`[setYandexToken] токен ${token ? 'установлен (первые 10 символов: ' + token.substring(0,10) + '...)' : 'пустой'}`);
     safeLog(adminChatId, bot, `[setYandexToken] токен ${token ? 'установлен (первые 10 символов: ' + token : 'пустой'}`, 'info', true, logFn);
+    logFn(`[setYandexToken] токен ${token ? 'установлен (первые 10 символов: ' + token : 'пустой'}`, 'info', diagnosticMode);
 }
 
 // ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ЛОГИРОВАНИЯ =====
