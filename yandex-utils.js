@@ -1,12 +1,28 @@
-// yandex-utils.js — функции для работы с Яндекс.API и парсинга контента
+// yandex-utils.js — версия 1.1.1
+// Функции для работы с 300.ya.ru: получение shortUrl, парсинг страницы, форматирование новости.
 
 const axios = require('axios');
 const cheerio = require('cheerio');
-const config = require('./config'); // Импортируем переменные конфигурации
-const { logToAdmin } = require('./telegram-utils'); // Используем логгер
 
-// ===== ФУНКЦИЯ ПОЛУЧЕНИЯ КОРОТКОЙ ССЫЛКИ =====
-async function getShortUrl(articleUrl) {
+// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (используют глобальный YANDEX_TOKEN из config) =====
+let YANDEX_TOKEN = ''; // будет установлено через applyConfig
+
+// Мы не можем напрямую импортировать YANDEX_TOKEN из config, так как он может меняться.
+// Поэтому будем передавать его через замыкание при вызове getShortUrl и extractTextFromYaRu.
+// Вместо этого я буду использовать глобальный объект config, но для простоты сделаем так:
+// В index.js мы передадим YANDEX_TOKEN как параметр в функции.
+
+// Однако проще всего сделать так, чтобы функции принимали YANDEX_TOKEN как аргумент.
+// Но я перепишу их с использованием глобальной переменной из config, если она экспортируется.
+
+// В этом файле мы будем использовать переменную configYandexToken, которую установим из вне.
+let configYandexToken = '';
+
+function setYandexToken(token) {
+    configYandexToken = token;
+}
+
+async function getShortUrl(articleUrl, yandexToken) {
     if (articleUrl.includes('300.ya.ru')) {
         return { status: 'success', sharing_url: articleUrl };
     }
@@ -16,7 +32,7 @@ async function getShortUrl(articleUrl) {
             { article_url: articleUrl },
             {
                 headers: {
-                    'Authorization': config.YANDEX_TOKEN,
+                    'Authorization': yandexToken || configYandexToken,
                     'Content-Type': 'application/json'
                 },
                 timeout: 10000
@@ -24,16 +40,15 @@ async function getShortUrl(articleUrl) {
         );
         return { status: 'success', sharing_url: response.data.sharing_url };
     } catch (e) {
-        logToAdmin(`❌ Ошибка получения shortUrl: ${e.message}`);
+        console.error('❌ Ошибка получения shortUrl:', e.message);
         if (e.response) {
-            logToAdmin(`Статус: ${e.response.status}, данные: ${JSON.stringify(e.response.data)}`);
+            console.error('Статус:', e.response.status, 'Данные:', JSON.stringify(e.response.data));
         }
         return { status: 'error', message: e.message };
     }
 }
 
-// ===== ФУНКЦИЯ ИЗВЛЕЧЕНИЯ ТЕКСТА СО СТРАНИЦЫ 300.YA.RU =====
-async function extractTextFromYaRu(url) {
+async function extractTextFromYaRu(url, yandexToken, logToAdmin = null, adminChatId = null, bot = null) {
     try {
         const response = await axios.get(url, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -43,34 +58,34 @@ async function extractTextFromYaRu(url) {
         const $ = cheerio.load(response.data);
         const originLink = $('a').filter((i, el) => $(el).text().includes('Перейти на оригинал')).attr('href') || '';
         const fullText = $('body').text();
-        
-        // === ДИАГНОСТИКА ===
-        logToAdmin(`📄 Получена страница ${url}, первые 500 символов:`);
-        logToAdmin(fullText.substring(0, 500));
-        const hasForbiddenPhrase = fullText.includes('Данный формат временно недоступен для этого видео');
-        logToAdmin(`🔍 Фраза "Данный формат временно недоступен для этого видео" ${hasForbiddenPhrase ? 'ПРИСУТСТВУЕТ' : 'ОТСУТСТВУЕТ'}`);
-        // ====================
+
+        // Диагностика
+        const msg = `📄 Получена страница ${url}, первые 500 символов:\n${fullText.substring(0, 500)}\n🔍 Фраза "Данный формат временно недоступен для этого видео" ${fullText.includes('Данный формат временно недоступен для этого видео') ? 'ПРИСУТСТВУЕТ' : 'ОТСУТСТВУЕТ'}`;
+        if (logToAdmin && adminChatId && bot) {
+            logToAdmin(adminChatId, bot, msg);
+        } else {
+            console.log(msg);
+        }
 
         const { title, content } = parseContent(fullText);
         return { status: 200, title, content, origin: originLink };
     } catch (e) {
-        logToAdmin(`❌ Ошибка получения контента с ${url}: ${e.message}`);
+        console.error('❌ Ошибка получения контента с', url, e.message);
         if (e.response) {
-            logToAdmin(`Статус: ${e.response.status}`);
+            console.error('Статус:', e.response.status);
         }
         return { status: 500, title: 'Error', content: e.message, origin: '' };
     }
 }
 
-// ===== ПАРСИНГ СОДЕРЖИМОГО =====
 function parseContent(fullText) {
     const isYandexGptSummary = /YandexGPT\s+краткий пересказ статьи от нейросети/im.test(fullText);
     const startMarker = /Пересказ сделан (.{0,50}?)Обновить/s;
     const startMatch = fullText.match(startMarker);
     const endMarker = /Для улучшения качества предложите свой вариант/im;
     const endMatch = fullText.match(endMarker);
-    const dividerMarker = isYandexGptSummary 
-        ? /Кратко\s+Подробно/im 
+    const dividerMarker = isYandexGptSummary
+        ? /Кратко\s+Подробно/im
         : /\d{2}:\d{2}:\d{2}/;
     const dividerMatch = fullText.match(dividerMarker);
 
@@ -101,7 +116,6 @@ function parseContent(fullText) {
     return { title: titleText, content: cleanText };
 }
 
-// ===== ФОРМАТИРОВАНИЕ НОВОСТИ (разбивка на части) =====
 function formatNews(title, content) {
     const BUTTON_TEXT = 'Открыть пересказ на 300.ya.ru';
     const BUTTON_URL_LENGTH = 30;
@@ -147,9 +161,11 @@ function formatNews(title, content) {
     return messageParts;
 }
 
+// ===== ЭКСПОРТ =====
 module.exports = {
     getShortUrl,
     extractTextFromYaRu,
     parseContent,
-    formatNews
+    formatNews,
+    setYandexToken
 };
