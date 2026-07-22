@@ -1,4 +1,4 @@
-// index.js — версия 1.0.8
+// index.js — версия 1.0.9
 
 // ===== ИНДИВИДУАЛЬНЫЕ НАСТРОЙКИ (переменные по умолчанию) =====
 let allowedDomains = ['nplus1.ru', 'naked-science.ru', '300.ya.ru'];
@@ -83,6 +83,35 @@ async function notifyAdmin(message) {
     }
 }
 
+// ===== ИЗВЛЕЧЕНИЕ КОНФИГА ИЗ ТЕКСТА (по маркеру [[[ ... ]]]) =====
+function extractConfig(text) {
+    if (!text) return null;
+    // Ищем содержимое между [[[ и ]]]
+    const match = text.match(/\[\[\[\s*([\s\S]*?)\s*\]\]\]/);
+    if (!match) return null;
+    let inner = match[1].trim();
+    // Удаляем возможные BOM и лишние пробелы
+    inner = inner.replace(/^\uFEFF/, '').trim();
+    // Если текст обёрнут в кавычки, снимаем их
+    if (inner.startsWith('"') && inner.endsWith('"')) {
+        inner = inner.substring(1, inner.length - 1);
+    }
+    inner = inner.replace(/\u00A0/g, ' ');
+    try {
+        const arr = JSON.parse(inner);
+        if (Array.isArray(arr) && arr.length === 14) {
+            return arr;
+        } else {
+            console.warn('Извлечённый массив имеет неверную длину (ожидается 14):', arr);
+            return null;
+        }
+    } catch (e) {
+        console.error('Ошибка парсинга JSON в извлечённом конфиге:', e.message);
+        console.error('Текст, который парсили:', inner);
+        return null;
+    }
+}
+
 // ===== ПРИМЕНЕНИЕ КОНФИГА =====
 function applyConfig(arr) {
     if (!Array.isArray(arr) || arr.length !== 14) {
@@ -105,23 +134,27 @@ function applyConfig(arr) {
     logToAdmin('✅ Конфиг применён');
 }
 
-// ===== ЗАГРУЗКА ИЗ ЗАКРЕПЛЁННОГО СООБЩЕНИЯ =====
+// ===== ЗАГРУЗКА КОНФИГА ИЗ ЗАКРЕПЛЁННОГО СООБЩЕНИЯ =====
 async function loadConfigFromPinned() {
     if (!adminChatId) return false;
     try {
         const chat = await bot.getChat(adminChatId);
         const pinned = chat.pinned_message;
         if (pinned && pinned.text) {
-            const match = pinned.text.match(/(\[[\s\S]*?\])/);
-            if (match) {
-                const arr = JSON.parse(match[1]);
+            const arr = extractConfig(pinned.text);
+            if (arr) {
                 applyConfig(arr);
                 logToAdmin('✅ Конфиг загружен из закреплённого сообщения');
                 return true;
+            } else {
+                logToAdmin('⚠️ Закреплённое сообщение не содержит валидный конфиг');
             }
         }
     } catch (e) {
-        console.error('Ошибка загрузки конфига из закреплённого:', e);
+        console.error('Ошибка при получении закреплённого сообщения:', e);
+        if (adminChatId) {
+            bot.sendMessage(adminChatId, `❌ Ошибка загрузки конфига: ${e.message}`).catch(() => {});
+        }
     }
     return false;
 }
@@ -272,45 +305,44 @@ app.post('/webhook', async (req, res) => {
     const userId = message.from?.id;
     const chatIdStr = normalizeId(chatId);
 
-    logToAdmin(`📥 Вебхук: chatId=${chatId} (норм: ${chatIdStr}), type=${chatType}, user=${username}, text=${text.substring(0, 80)}${text.length > 80 ? '...' : ''}`);
+    logToAdmin(`📥 Вебхук: chatId=${chatId} (норм: ${chatIdStr}), type=${chatType}, user=${username}`);
 
     // === ОБРАБОТКА ЛИЧНЫХ СООБЩЕНИЙ ===
     if (chatType === 'private') {
+        // Если администратор уже назначен
         if (chatId === adminChatId) {
-if (text.trim().startsWith('[')) {
-    let cleanText = '';
-    // Диагностика: выводим точный текст сообщения
-    console.log('=== ТЕКСТ СООБЩЕНИЯ ===');
-    console.log(text);
-    console.log('=== ДЛИНА: ' + text.length);
-    console.log('=== ПЕРВЫЕ 20 СИМВОЛОВ: ' + JSON.stringify(text.substring(0, 20)));
-    console.log('=== ПОСЛЕДНИЕ 20 СИМВОЛОВ: ' + JSON.stringify(text.substring(text.length - 20)));
-    
-    try {
-        // Попытка очистить текст от возможных BOM и лишних пробелов
-        let cleanText = text.trim();
-        // Если текст обёрнут в кавычки, снимаем их
-        if (cleanText.startsWith('"') && cleanText.endsWith('"')) {
-            cleanText = cleanText.substring(1, cleanText.length - 1);
-        }
-        // Заменяем возможные неразрывные пробелы на обычные
-        cleanText = cleanText.replace(/\u00A0/g, ' ');
-        // Если есть символы BOM (U+FEFF) — удаляем
-        cleanText = cleanText.replace(/^\uFEFF/, '');
-        
-        const arr = JSON.parse(cleanText);
-                    applyConfig(arr);
-                    await bot.sendMessage(adminChatId, '✅ Конфиг обновлён и закреплён.');
-    } catch (e) {
-        // Выводим ошибку с текстом, который не удалось распарсить
-        console.error('Ошибка парсинга JSON. Текст, вызвавший ошибку:');
-        console.error(cleanText);
-        await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}\nПроверьте текст сообщения.`);
-    }
-}
+            // Проверяем наличие маркера [[[ в тексте (команда конфига)
+            if (text.includes('[[[')) {
+                const arr = extractConfig(text);
+                if (arr) {
+                    try {
+                        applyConfig(arr);
+                        await bot.sendMessage(adminChatId, '✅ Конфиг обновлён.');
+                    } catch (e) {
+                        await bot.sendMessage(adminChatId, `❌ Ошибка применения конфига: ${e.message}`);
+                    }
+                } else {
+                    await bot.sendMessage(adminChatId, '❌ Не удалось извлечь конфиг из сообщения. Убедитесь, что он обёрнут в [[[ ... ]]] и содержит валидный JSON-массив из 14 элементов.');
+                }
+                return;
+            }
+
+            // Команда перезагрузки конфига из закреплённого сообщения
+            if (text.startsWith('/reload')) {
+                const loaded = await loadConfigFromPinned();
+                if (loaded) {
+                    await bot.sendMessage(adminChatId, '✅ Конфиг перезагружен из закреплённого сообщения.');
+                } else {
+                    await bot.sendMessage(adminChatId, '❌ Не удалось загрузить конфиг. Убедитесь, что закреплённое сообщение содержит маркер [[[ ... ]]] и валидный массив.');
+                }
+                return;
+            }
+
+            // Иначе игнорируем (можно добавить другие команды)
             return;
         }
 
+        // Если администратор ещё не назначен
         if (!adminChatId) {
             if (!greetedUsers.has(chatId)) {
                 greetedUsers.set(chatId, true);
@@ -323,7 +355,7 @@ if (text.trim().startsWith('[')) {
                 const mask = maskMatch[0];
                 if (isUsernameMatchMask(username, mask)) {
                     adminChatId = chatId;
-                    console.log(`Администратор назначен (chat_id: ${adminChatId})`);
+                    console.log(`Администратор назначен`); // без ID
                     let greeting = '✅ Вы назначились администратором бота.';
                     const configLoaded = await loadConfigFromPinned();
                     if (configLoaded) {
@@ -334,35 +366,31 @@ if (text.trim().startsWith('[')) {
                     await bot.sendMessage(adminChatId, greeting);
                     return;
                 } else {
-                    await bot.sendMessage(chatId, 'Здравствуйте!');
+                    await bot.sendMessage(chatId, '❌ Маска не подходит для вашего username. Попробуйте ещё раз.');
                     return;
                 }
             } else {
                 greetedUsers.set(chatId, true);
-                await bot.sendMessage(chatId, 'Здравствуйте!', { parse_mode: 'Markdown' });
+                await bot.sendMessage(chatId, 'Здравствуйте! Отправьте маску вида `б*б` (например, d*n) для проверки.', { parse_mode: 'Markdown' });
                 return;
             }
         }
     }
 
-    // === ПРОВЕРКА РАЗРЕШЁННЫХ КАНАЛОВ/ГРУПП (с нормализацией ID) ===
+    // === ДАЛЕЕ ОБРАБОТКА КАНАЛОВ И ГРУПП ===
     const isChannel = chatType === 'channel';
     const isGroup = chatType === 'group' || chatType === 'supergroup';
 
     if (isChannel) {
         if (!allowedChannels.includes(chatIdStr)) {
-            logToAdmin(`❌ Канал ${chatId} (норм: ${chatIdStr}) не в списке разрешённых (allowedChannels: ${JSON.stringify(allowedChannels)})`);
+            logToAdmin(`❌ Канал ${chatId} (норм: ${chatIdStr}) не в списке разрешённых`);
             return;
-        } else {
-            logToAdmin(`✅ Канал ${chatId} разрешён`);
         }
     }
     if (isGroup) {
         if (!allowedGroups.includes(chatIdStr)) {
-            logToAdmin(`❌ Группа ${chatId} (норм: ${chatIdStr}) не в списке разрешённых (allowedGroups: ${JSON.stringify(allowedGroups)})`);
+            logToAdmin(`❌ Группа ${chatId} (норм: ${chatIdStr}) не в списке разрешённых`);
             return;
-        } else {
-            logToAdmin(`✅ Группа ${chatId} разрешена`);
         }
     }
 
@@ -373,10 +401,8 @@ if (text.trim().startsWith('[')) {
         logToAdmin(`ℹ️ Анонимный пост в канале ${chatId}, обрабатываем`);
     } else {
         if (!isAdmin && !isAllowedUser) {
-            logToAdmin(`❌ Пользователь ${username} (ID: ${userId}) не разрешён (allowedUsernames: ${JSON.stringify(allowedUsernames)})`);
+            logToAdmin(`❌ Пользователь ${username} не разрешён`);
             return;
-        } else {
-            logToAdmin(`✅ Пользователь ${username} разрешён`);
         }
     }
 
@@ -390,7 +416,6 @@ if (text.trim().startsWith('[')) {
     const originalUrl = urlMatch[0];
     logToAdmin(`🔗 Исходный URL: ${originalUrl}`);
 
-    // === ПРОВЕРКА ДОМЕНА (с нормализацией ID) ===
     const isDomainCheckSkipped = (isChannel && allowedChannelsNoDomainCheck.includes(chatIdStr)) ||
                                  (isGroup && allowedGroupsNoDomainCheck.includes(chatIdStr));
 
@@ -398,10 +423,8 @@ if (text.trim().startsWith('[')) {
         try {
             const hostname = new URL(originalUrl).hostname;
             if (!allowedDomains.includes(hostname)) {
-                logToAdmin(`❌ Домен ${hostname} не разрешён (allowedDomains: ${JSON.stringify(allowedDomains)})`);
+                logToAdmin(`❌ Домен ${hostname} не разрешён`);
                 return;
-            } else {
-                logToAdmin(`✅ Домен ${hostname} разрешён`);
             }
         } catch (e) {
             console.error('Ошибка парсинга URL:', e);
@@ -548,7 +571,7 @@ app.get('/ping', (req, res) => {
 
 app.get('/status', (req, res) => {
     res.json({
-        version: '1.0.8',
+        version: '1.0.9',
         uptime: process.uptime(),
         tasksCount: tasks.size,
         activeTasks: Array.from(tasks.keys()),
@@ -598,7 +621,7 @@ async function setWebhook(url) {
 }
 
 app.listen(PORT, async () => {
-    console.log(`Бот запущен, версия 1.0.8, порт ${PORT}`);
+    console.log(`Бот запущен, версия 1.0.9, порт ${PORT}`);
     const webhookUrl = `${RENDER_URL}/webhook`;
     await setWebhook(webhookUrl);
     startPingScheduler();
