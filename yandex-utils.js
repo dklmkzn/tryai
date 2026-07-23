@@ -88,10 +88,19 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
         const fullText = $('body').text();
 
         // === ПРОВЕРКА НА НЕСТАБИЛЬНОСТЬ (только явные технические маркеры) ===
-        const isUnstable = (
-            fullText.includes('__sveltekit_') ||
-            fullText.includes('mc.yandex.ru') ||
-            fullText.includes('Краткий пересказ ... доступен только пользователям Яндекс Браузера')
+
+const isUnstable = (
+    fullText.includes('__sveltekit_') ||
+    fullText.includes('mc.yandex.ru') ||
+    fullText.includes('Краткий пересказ ... доступен только пользователям Яндекс Браузера') ||
+    fullText.includes('Скачайте Браузер') ||
+    fullText.includes('Войти')
+);
+
+if (isUnstable) {
+    safeLog(adminChatId, bot, `Страница нестабильна (обнаружен промо-блок или тех. мусор), длина ${fullText.length}`, 'info', diagnosticMode, logFn);
+    return { status: 202, title: '', content: '', origin: '' };
+}
         );
 
         // Если маркеры есть И текст короткий (< 500 символов) — считаем нестабильным
