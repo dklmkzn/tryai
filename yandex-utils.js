@@ -160,6 +160,8 @@ async function extractTextFromYaRu(originalUrl, shortUrl, yandexToken, logFn = n
                     origin: data.sharing_url || ''
                 };
             } else {
+//await
+bot.sendMessage(adminChatId, '❌❌❌');
                 safeLog(adminChatId, bot, `⚠️ API вернул ошибку, переходим к парсингу страницы: ${apiResult.message}`, 'warn', diagnosticMode, logFn);
             }
         }
