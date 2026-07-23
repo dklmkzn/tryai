@@ -1,7 +1,6 @@
-// yandex-utils.js — версия 1.1.19
-// Добавлен метод получения пересказа через API 300.ya.ru/generation с куками.
-// В случае ошибки выполняется fallback на парсинг страницы (старый способ).
-// Если и парсинг не даёт результата, отправляется ошибка админу.
+// yandex-utils.js — версия 1.1.20
+// Добавлен API-метод с куками. Из ответа используются только заголовок и тезисы (главы игнорируются).
+// В случае ошибки — fallback на парсинг страницы.
 
 const axios = require('axios');
 const cheerio = require('cheerio');
@@ -31,7 +30,7 @@ function escapeHtml(text) {
         .replace(/'/g, '&#039;');
 }
 
-// ===== НОВЫЙ МЕТОД: ПОЛУЧЕНИЕ ПЕРЕСКАЗА ЧЕРЕЗ API =====
+// ===== НОВЫЙ МЕТОД: ПОЛУЧЕНИЕ ПЕРЕСКАЗА ЧЕРЕЗ API (только тезисы) =====
 async function getSummaryViaApi(articleUrl, cookieString, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
     const BASE_URL = 'https://300.ya.ru/api';
     const session = axios.create({
@@ -59,14 +58,12 @@ async function getSummaryViaApi(articleUrl, cookieString, logFn = null, adminCha
     }
 
     try {
-        // 1. Запускаем генерацию
         const startPayload = { article_url: articleUrl, type: 'article', ignore_cache: false };
         const startResp = await session.post(`${BASE_URL}/generation`, startPayload);
         const startData = startResp.data;
 
         const statusCode = startData.status_code;
         if (statusCode === 2) {
-            // Сразу готово
             return { status: 'success', data: startData };
         } else if (statusCode === 3) {
             throw new Error(`Ошибка генерации (status_code=3): ${JSON.stringify(startData)}`);
@@ -77,9 +74,8 @@ async function getSummaryViaApi(articleUrl, cookieString, logFn = null, adminCha
 
         let pollInterval = (startData.poll_interval_ms || 2000) / 1000;
         let attempts = 0;
-        const maxAttempts = 60; // ~2 минуты
+        const maxAttempts = 60;
 
-        // 2. Опрашиваем до готовности
         while (attempts < maxAttempts) {
             await new Promise(resolve => setTimeout(resolve, pollInterval * 1000));
             attempts++;
@@ -103,31 +99,20 @@ async function getSummaryViaApi(articleUrl, cookieString, logFn = null, adminCha
     }
 }
 
-// ===== ФОРМАТИРОВАНИЕ РЕЗУЛЬТАТА ИЗ API =====
+// ===== ФОРМАТИРОВАНИЕ РЕЗУЛЬТАТА ИЗ API (только тезисы) =====
 function formatSummaryFromApi(data) {
-    // data: { title, thesis, chapters, sharing_url }
     let parts = [];
     if (data.title) {
         parts.push(`<b>${escapeHtml(data.title)}</b>`);
     }
+    // Только тезисы (главы игнорируем)
     if (data.thesis && data.thesis.length) {
         parts.push('<b>Подробные тезисы</b>');
         data.thesis.forEach((t, i) => {
             parts.push(`• ${escapeHtml(t.content)}`);
         });
     }
-    if (data.chapters && data.chapters.length) {
-        data.chapters.forEach((ch, i) => {
-            const chTitle = escapeHtml(ch.content || `Глава ${i+1}`);
-            parts.push(`<b>${chTitle}</b>`);
-            if (ch.theses && ch.theses.length) {
-                ch.theses.forEach(t => {
-                    parts.push(`• ${escapeHtml(t.content)}`);
-                });
-            }
-        });
-    }
-    // Добавляем ссылку на 300.ya.ru (если есть)
+    // Короткая ссылка (если есть)
     if (data.sharing_url) {
         parts.push(`<a href="${escapeHtml(data.sharing_url)}">Открыть пересказ на 300.ya.ru</a>`);
     }
@@ -143,7 +128,7 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
             if (apiResult.status === 'success') {
                 const data = apiResult.data;
                 const content = formatSummaryFromApi(data);
-                safeLog(adminChatId, bot, '✅ Контент получен через API', 'info', diagnosticMode, logFn);
+                safeLog(adminChatId, bot, '✅ Контент получен через API (только тезисы)', 'info', diagnosticMode, logFn);
                 return {
                     status: 200,
                     title: data.title || '',
@@ -152,7 +137,7 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
                 };
             } else {
                 safeLog(adminChatId, bot, `⚠️ API вернул ошибку, переходим к парсингу страницы: ${apiResult.message}`, 'warn', diagnosticMode, logFn);
-                // Падаем в парсинг
+                // падаем в парсинг
             }
         }
 
@@ -178,7 +163,6 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
 
         const { title, content } = parseContent(fullText);
         if (!content || content.length < 100) {
-            // Если контент слишком короткий, возможно, страница не загрузилась или требует авторизации
             safeLog(adminChatId, bot, `⚠️ Парсинг дал короткий контент (${content ? content.length : 0} символов), возможно, требуется авторизация.`, 'warn', diagnosticMode, logFn);
             return { status: 500, title: 'Ошибка', content: 'Не удалось получить контент. Проверьте куки или токен.', origin: '' };
         }
@@ -193,14 +177,8 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
     }
 }
 
-// ===== ОСТАЛЬНЫЕ ФУНКЦИИ (parseContent, formatNews, getShortUrl) без изменений =====
-// ... (они остаются как в версии 1.1.18)
-
-// Для краткости я не повторяю их здесь, но они должны быть вставлены из предыдущей версии.
-// Ниже приведу их в полном виде.
-
+// ===== ПАРСИНГ СТРАНИЦЫ (fallback) =====
 function parseContent(fullText) {
-    // ... (как в версии 1.1.18)
     let cleaned = fullText.replace(/Данный формат временно недоступен для этого видео/gi, '');
     const parts = cleaned.split(/(Пользовательское соглашение|API|Как использовать API)/i);
     if (parts.length > 1) {
@@ -250,8 +228,8 @@ function parseContent(fullText) {
     return { title: titleText, content: cleanText };
 }
 
+// ===== ФОРМАТИРОВАНИЕ ДЛЯ ОТПРАВКИ (с экранированием) =====
 function formatNews(title, content) {
-    // ... (как в версии 1.1.18)
     const safeTitle = escapeHtml(title);
     const safeContent = escapeHtml(content);
 
@@ -299,9 +277,8 @@ function formatNews(title, content) {
     return messageParts;
 }
 
-// getShortUrl остаётся без изменений (был в версии 1.1.18)
+// ===== ПОЛУЧЕНИЕ КОРОТКОЙ ССЫЛКИ =====
 async function getShortUrl(articleUrl, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
-    // ... (код как в 1.1.18)
     const usedToken = yandexToken || configYandexToken;
     const tokenPreview = usedToken ? usedToken.substring(0,10) + '...' : 'НЕ ЗАДАН';
     safeLog(adminChatId, bot, `[getShortUrl] используемый токен: ${tokenPreview} (передан yandexToken=${!!yandexToken}, configYandexToken=${!!configYandexToken})`, 'info', diagnosticMode, logFn);
