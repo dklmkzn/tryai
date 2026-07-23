@@ -151,10 +151,9 @@ const state = {
             this.safeLog(adminChatId, bot, `loadConfigFromPinned: текст получен, длина ${pinned.text.length}`, 'info', diagnosticMode, logFn);
             const arr = this.extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
             if (arr) {
-                // Декодируем массив
-                const decodedArr = this.decodeConfig(arr);
-                this.applyConfig(decodedArr);
-                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: конфиг успешно применён (декодирован)', 'info', diagnosticMode, logFn);
+                // Применяем массив напрямую (он уже декодирован)
+                this.applyConfig(arr);
+                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: конфиг успешно применён', 'info', diagnosticMode, logFn);
                 return true;
             } else {
                 this.safeLog(adminChatId, bot, 'loadConfigFromPinned: не удалось извлечь массив', 'error', diagnosticMode, logFn);
