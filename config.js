@@ -151,6 +151,15 @@ const state = {
                 return false;
             }
             const arr = this.extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
+
+// ===== ОТЛАДОЧНАЯ ПЕЧАТЬ =====
+try {
+    await bot.sendMessage(adminChatId, `📋 Декодированный массив:\n\`\`\`json\n${JSON.stringify(decodedArr, null, 2)}\n\`\`\``, { parse_mode: 'Markdown' });
+} catch (e) {
+    console.error('Не удалось отправить отладку:', e.message);
+}
+// ============================
+            
             if (arr) {
                 // Декодируем массив
                 const decodedArr = this.decodeConfig(arr);
