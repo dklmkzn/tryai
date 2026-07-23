@@ -163,7 +163,7 @@ async loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMode = fals
         this.safeLog(adminChatId, bot, `loadConfigFromPinned: ошибка: ${e.message}`, 'error', diagnosticMode, logFn);
         return false;
     }
-}
+},
 
     async updatePinnedConfig(adminChatId, bot, arr, logFn = null, diagnosticMode = false) {
         if (!adminChatId) return false;
