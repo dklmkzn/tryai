@@ -87,7 +87,7 @@ app.post('/webhook', async (req, res) => {
 
             // Конфиг через [[[ (обновление с кодированием)
 if (text.includes('[[')) {
-    const arr = state.extractConfig(text, log, adminChatId, bot, state.DIAGNOSTIC_MODE);
+    const arr = state.parseConfigFromCommand(text, log, adminChatId, bot, state.DIAGNOSTIC_MODE);
     if (arr) {
         try {
             if (adminChatId) {
