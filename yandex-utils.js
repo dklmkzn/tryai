@@ -161,7 +161,7 @@ async function extractTextFromYaRu(originalUrl, shortUrl, yandexToken, logFn = n
                 };
             } else {
 //await
-bot.sendMessage(adminChatId, '❌❌❌');
+bot.sendMessage(adminChatId, `❌❌❌❌❌❌${diagnosticMode}`);
                 safeLog(adminChatId, bot, `⚠️ API вернул ошибку, переходим к парсингу страницы: ${apiResult.message}`, 'warn', diagnosticMode, logFn);
             }
         }
