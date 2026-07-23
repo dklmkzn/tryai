@@ -1,7 +1,9 @@
-// telegram-utils.js — версия 1.1.1 6
-const VERSION = '1.1.25';
+// telegram-utils.js — версия 1.1.26
+// Утилиты для работы с Telegram: логирование, обработка ссылок, self-ping.
+
 const axios = require('axios');
 
+// ===== ЛОГИРОВАНИЕ (критические ошибки всегда, остальное по флагу) =====
 function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = false) {
     const isCritical = level === 'error' && (
         message.includes('Self-ping failed') ||
@@ -12,18 +14,22 @@ function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = 
         message.includes('extractTextFromYaRu')
     );
 
-    if (!adminChatId) {
-        console.log(`[${level}] ${message}`);
-        return;
-    }
-
+    // Критические ошибки всегда выводятся в консоль и отправляются админу (если он есть)
     if (isCritical) {
-        if (bot) {
+        console.error(`[${level}] ${message}`);
+        if (adminChatId && bot) {
             bot.sendMessage(adminChatId, `⚠️ ${message}`).catch(e => console.error('Ошибка отправки критического:', e.message));
         }
         return;
     }
 
+    // Если админ не назначен — выводим в консоль (полезно до назначения)
+    if (!adminChatId) {
+        console.log(`[${level}] ${message}`);
+        return;
+    }
+
+    // Если диагностика включена — отправляем в личку
     if (diagnosticMode) {
         if (bot) {
             bot.sendMessage(adminChatId, `📝 ${message}`).catch(e => {
@@ -33,6 +39,7 @@ function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = 
         }
         return;
     }
+    // Если диагностика выключена и не критично — ничего не делаем
 }
 
 function logToAdmin(adminChatId, bot, message) {
@@ -62,7 +69,9 @@ function isUsernameMatchMask(username, mask) {
 function scheduleSelfPing(params, renderUrl) {
     const url = `${renderUrl}/process?` + new URLSearchParams(params).toString();
     setTimeout(() => {
-        axios.get(url).catch(err => console.error('Self-ping failed:', err.message));
+        axios.get(url).catch(err => {
+            console.error('Self-ping failed:', err.message);
+        });
     }, 1000);
 }
 
@@ -98,7 +107,6 @@ async function processUrl(chatId, text, originalMessageId, deps) {
         const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
         const params = {
             shortUrl,
-            originalUrl,   // <-- добавляем оригинальную ссылку
             chatId,
             messageId: sentMsg.message_id,
             attempt: 1,
@@ -116,7 +124,6 @@ async function processUrl(chatId, text, originalMessageId, deps) {
 }
 
 module.exports = {
-    VERSION,
     logMessage,
     logToAdmin,
     notifyAdmin,
