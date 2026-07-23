@@ -3,7 +3,7 @@ const express = require('express');
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
 
-const state = require('./config');/
+const state = require('./config');
 const yandex = require('./yandex-utils');
 const tgUtils = require('./telegram-utils');
 
