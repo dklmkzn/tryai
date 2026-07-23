@@ -1,11 +1,7 @@
-// telegram-utils.js — версия 1.1.6
-// Утилиты для работы с Telegram: логирование, уведомления, обработка ссылок, self-ping.
-
+// telegram-utils.js — версия 1.1.7
 const axios = require('axios');
 
-// ===== ОСНОВНАЯ ФУНКЦИЯ ЛОГИРОВАНИЯ =====
 function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = false) {
-    // Критические ошибки — всегда в консоль и админу
     const isCritical = level === 'error' && (
         message.includes('Self-ping failed') ||
         message.includes('Недостаточно параметров') ||
@@ -19,20 +15,16 @@ function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = 
     if (isCritical) {
         console.error(`[${level}] ${message}`);
         if (adminChatId && bot) {
-            bot.sendMessage(adminChatId, `⚠️ ${message}`).catch(e => {
-                console.error('Не удалось отправить критическое уведомление:', e.message);
-            });
+            bot.sendMessage(adminChatId, `⚠️ ${message}`).catch(e => console.error('Ошибка отправки критического:', e.message));
         }
         return;
     }
 
-    // Если админ не назначен — выводим в консоль
     if (!adminChatId) {
         console.log(`[${level}] ${message}`);
         return;
     }
 
-    // Если админ назначен и включена диагностика — в приват, консоль молчит
     if (diagnosticMode) {
         if (bot) {
             bot.sendMessage(adminChatId, `📝 ${message}`).catch(e => {
@@ -42,11 +34,9 @@ function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = 
         }
         return;
     }
-
-    // Если диагностика выключена — ничего не делаем
+    // если диагностика выключена и не критично — ничего не делаем
 }
 
-// ===== ОБЁРТКА ДЛЯ СОВМЕСТИМОСТИ (используется редко) =====
 function logToAdmin(adminChatId, bot, message) {
     logMessage(adminChatId, bot, message, 'info', false);
 }
@@ -74,9 +64,7 @@ function isUsernameMatchMask(username, mask) {
 function scheduleSelfPing(params, renderUrl) {
     const url = `${renderUrl}/process?` + new URLSearchParams(params).toString();
     setTimeout(() => {
-        axios.get(url).catch(err => {
-            console.error('Self-ping failed:', err.message);
-        });
+        axios.get(url).catch(err => console.error('Self-ping failed:', err.message));
     }, 1000);
 }
 
