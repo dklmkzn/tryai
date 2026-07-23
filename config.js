@@ -20,11 +20,14 @@ const state = {
     COOKIES: '',
 
     // ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ЛОГИРОВАНИЯ =====
-    safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
+    function safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
+        bot.sendMessage(adminChatId, `❌❌❌ ${diagnosticMode}`);
         if (logFn) {
-            logFn(message, level, diagnosticMode);
+            logFn(adminChatId, bot, message, level, diagnosticMode);
         } else {
-            console.log(`[${level}] ${message}`);
+            if (diagnosticMode) {
+                console.log(`[${level}] ${message}`);
+            }
         }
     },
 
