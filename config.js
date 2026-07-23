@@ -17,7 +17,7 @@ const state = {
     MAX_LONG_ATTEMPTS: 20,
     PING_MIN_INTERVAL: 10 * 60 * 1000,
     PING_MAX_INTERVAL: 13 * 60 * 1000,
-    DEPLOY_HOOK_URL: '',
+    DEPLOY_HOOK_ID: '',
     COOKIES: '',
 
     // ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ЛОГИРОВАНИЯ =====
