@@ -175,15 +175,15 @@ app.post('/webhook', async (req, res) => {
                     return;
                 } else {
                     // Маска не подходит — логируем в личку (если диагностика включена)
-                    log(`Маска не подходит для username ${username}`, 'info');
-                    await bot.sendMessage(chatId, '❌ Маска не подходит для вашего username. Попробуйте ещё раз.');
+                    // log(`Маска не подходит для username ${username}`, 'info');
+                    await bot.sendMessage(chatId, 'Здравствуйте!');
                     return;
                 }
             } else {
                 // Маска не найдена — логируем в личку (если диагностика включена)
-                log(`Маска не найдена в тексте: "${text}"`, 'info');
+                // log(`Маска не найдена в тексте: "${text}"`, 'info');
                 greetedUsers.set(chatId, true);
-                await bot.sendMessage(chatId, 'Здравствуйте! Отправьте маску вида `б*б` (например, d*n).', { parse_mode: 'Markdown' });
+                await bot.sendMessage(chatId, 'Здравствуйте!', { parse_mode: 'Markdown' });
                 return;
             }
         }
