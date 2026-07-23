@@ -1,6 +1,5 @@
-// yandex-utils.js — версия 1.1.20
-// Добавлен API-метод с куками. Из ответа используются только заголовок и тезисы (главы игнорируются).
-// В случае ошибки — fallback на парсинг страницы.
+// yandex-utils.js — версия 1.1.21
+// API-режим: только тезисы, без лишних <b> и подписей. Заголовок добавляется в formatNews.
 
 const axios = require('axios');
 const cheerio = require('cheerio');
@@ -30,7 +29,7 @@ function escapeHtml(text) {
         .replace(/'/g, '&#039;');
 }
 
-// ===== НОВЫЙ МЕТОД: ПОЛУЧЕНИЕ ПЕРЕСКАЗА ЧЕРЕЗ API (только тезисы) =====
+// ===== API-МЕТОД С КУКАМИ =====
 async function getSummaryViaApi(articleUrl, cookieString, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
     const BASE_URL = 'https://300.ya.ru/api';
     const session = axios.create({
@@ -45,7 +44,6 @@ async function getSummaryViaApi(articleUrl, cookieString, logFn = null, adminCha
         timeout: 30000
     });
 
-    // Добавляем куки
     if (cookieString) {
         const cookies = {};
         cookieString.split(';').forEach(item => {
@@ -99,30 +97,25 @@ async function getSummaryViaApi(articleUrl, cookieString, logFn = null, adminCha
     }
 }
 
-// ===== ФОРМАТИРОВАНИЕ РЕЗУЛЬТАТА ИЗ API (только тезисы) =====
+// ===== ФОРМАТИРОВАНИЕ РЕЗУЛЬТАТА API (только тезисы, без лишних тегов) =====
 function formatSummaryFromApi(data) {
     let parts = [];
-    if (data.title) {
-        parts.push(`<b>${escapeHtml(data.title)}</b>`);
-    }
-    // Только тезисы (главы игнорируем)
+    // Заголовок не добавляем — он будет передан отдельно в formatNews
     if (data.thesis && data.thesis.length) {
-        parts.push('<b>Подробные тезисы</b>');
-        data.thesis.forEach((t, i) => {
+        // Убираем подпись «Подробные тезисы»
+        data.thesis.forEach((t) => {
             parts.push(`• ${escapeHtml(t.content)}`);
         });
     }
-    // Короткая ссылка (если есть)
     if (data.sharing_url) {
         parts.push(`<a href="${escapeHtml(data.sharing_url)}">Открыть пересказ на 300.ya.ru</a>`);
     }
     return parts.join('\n');
 }
 
-// ===== ИЗВЛЕЧЕНИЕ ТЕКСТА (сначала API, потом парсинг) =====
+// ===== ОСНОВНАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ КОНТЕНТА =====
 async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false, cookieString = '') {
     try {
-        // 1. Пробуем получить через API (если есть куки)
         if (cookieString) {
             const apiResult = await getSummaryViaApi(url, cookieString, logFn, adminChatId, bot, diagnosticMode);
             if (apiResult.status === 'success') {
@@ -137,11 +130,10 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
                 };
             } else {
                 safeLog(adminChatId, bot, `⚠️ API вернул ошибку, переходим к парсингу страницы: ${apiResult.message}`, 'warn', diagnosticMode, logFn);
-                // падаем в парсинг
             }
         }
 
-        // 2. Fallback: парсинг страницы (старый способ)
+        // Fallback: парсинг страницы
         const response = await axios.get(url, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -228,7 +220,7 @@ function parseContent(fullText) {
     return { title: titleText, content: cleanText };
 }
 
-// ===== ФОРМАТИРОВАНИЕ ДЛЯ ОТПРАВКИ (с экранированием) =====
+// ===== ФОРМАТИРОВАНИЕ ДЛЯ ОТПРАВКИ (с заголовком) =====
 function formatNews(title, content) {
     const safeTitle = escapeHtml(title);
     const safeContent = escapeHtml(content);
