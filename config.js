@@ -118,7 +118,7 @@ const state = {
                 }
                 return false;
             }
-            this.safeLog(adminChatId, bot, `loadConfigFromPinned: текст закреплённого сообщения получен, длина = ${pinned.text.length}`, 'info', diagnosticMode, logFn);
+            this.safeLog(adminChatId, bot, `loadConfigFromPinned: текст закреплённого сообщения получен: ${pinned.text}`, 'info', diagnosticMode, logFn);
             const arr = this.extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
             if (arr) {
                 this.applyConfig(arr);
