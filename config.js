@@ -23,7 +23,7 @@ const state = {
     safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
         bot.sendMessage(adminChatId, `❌❌❌ ${diagnosticMode}`);
         if (logFn) {
-            logFn(adminChatId, bot, message, level, diagnosticMode);
+            logFn(message, level, diagnosticMode);
         } else {
             if (diagnosticMode) {
                 console.log(`[${level}] ${message}`);
