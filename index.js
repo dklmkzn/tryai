@@ -1,9 +1,9 @@
-// index.js — версия 1.1.8
+// index.js — версия 1.1.9
 const express = require('express');
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
 
-const state = require('./config');   // теперь это объект, обновляемый по ссылке
+const state = require('./config');
 const yandex = require('./yandex-utils');
 const tgUtils = require('./telegram-utils');
 
@@ -19,15 +19,12 @@ const tasks = new Map();
 let adminChatId = null;
 const greetedUsers = new Map();
 
-// Устанавливаем токен из состояния (если есть)
 yandex.setYandexToken(state.YANDEX_TOKEN);
 
-// ===== ФУНКЦИЯ ЛОГИРОВАНИЯ =====
 function log(message, level = 'info', diagnosticMode = false) {
     tgUtils.logMessage(adminChatId, bot, message, level, diagnosticMode || state.DIAGNOSTIC_MODE);
 }
 
-// ===== ОБРАБОТЧИК ВЕБХУКА =====
 app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 
@@ -44,13 +41,10 @@ app.post('/webhook', async (req, res) => {
 
     log(`📥 Вебхук: chatId=${chatId} (норм: ${chatIdStrNorm}), type=${chatType}, user=${username}`, 'info');
 
-    // === ЛИЧНЫЕ СООБЩЕНИЯ ===
     if (chatType === 'private') {
-        // Если администратор уже назначен
         if (chatId === adminChatId) {
-            // Конфиг через [[[
             if (text.includes('[[')) {
-                const arr = state.extractConfig ? state.extractConfig(text, log, adminChatId, bot, state.DIAGNOSTIC_MODE) : null;
+                const arr = state.extractConfig(text, log, adminChatId, bot, state.DIAGNOSTIC_MODE);
                 if (arr) {
                     try {
                         state.applyConfig(arr);
@@ -66,7 +60,6 @@ app.post('/webhook', async (req, res) => {
                 return;
             }
 
-            // /reload
             if (text.startsWith('/reload')) {
                 const loaded = await state.loadConfigFromPinned(adminChatId, bot, log, true);
                 if (loaded) {
@@ -78,7 +71,6 @@ app.post('/webhook', async (req, res) => {
                 return;
             }
 
-            // /unpin
             if (text.startsWith('/unpin')) {
                 try {
                     const chat = await bot.getChat(adminChatId);
@@ -96,7 +88,6 @@ app.post('/webhook', async (req, res) => {
                 return;
             }
 
-            // Обработка ссылки
             await tgUtils.processUrl(chatId, text, null, {
                 bot,
                 tasks,
@@ -111,9 +102,7 @@ app.post('/webhook', async (req, res) => {
             return;
         }
 
-        // Если админ не назначен
         if (!adminChatId) {
-            // Приветствие
             if (!greetedUsers.has(chatId)) {
                 greetedUsers.set(chatId, true);
                 await bot.sendMessage(chatId, 'Здравствуйте!');
@@ -121,7 +110,6 @@ app.post('/webhook', async (req, res) => {
                 return;
             }
 
-            // Логируем полученный текст и username
             log(`Проверка маски от ${username}: текст="${text}"`, 'info');
 
             const maskMatch = text.match(/^([a-zA-Zа-яА-Я])\*([a-zA-Zа-яА-Я])$/);
@@ -161,7 +149,6 @@ app.post('/webhook', async (req, res) => {
         }
     }
 
-    // === КАНАЛЫ И ГРУППЫ ===
     const isChannel = chatType === 'channel';
     const isGroup = chatType === 'group' || chatType === 'supergroup';
 
@@ -190,7 +177,6 @@ app.post('/webhook', async (req, res) => {
         }
     }
 
-    // Проверка домена
     const isDomainCheckSkipped = (isChannel && state.allowedChannelsNoDomainCheck.includes(chatIdStrNorm)) ||
                                  (isGroup && state.allowedGroupsNoDomainCheck.includes(chatIdStrNorm));
     const urlMatch = text.match(/https?:\/\/[^\s]+/);
@@ -235,7 +221,6 @@ app.post('/webhook', async (req, res) => {
     });
 });
 
-// ===== /process =====
 app.get('/process', async (req, res) => {
     res.sendStatus(200);
 
@@ -341,12 +326,11 @@ app.get('/process', async (req, res) => {
     }, interval);
 });
 
-// ===== /ping, /status =====
 app.get('/ping', (req, res) => res.sendStatus(200));
 
 app.get('/status', (req, res) => {
     res.json({
-        version: '1.1.8',
+        version: '1.1.9',
         uptime: process.uptime(),
         tasksCount: tasks.size,
         activeTasks: Array.from(tasks.keys()),
@@ -355,7 +339,6 @@ app.get('/status', (req, res) => {
     });
 });
 
-// ===== ЗАПУСК =====
 function startPingScheduler() {
     const randomInterval = () => {
         const min = state.PING_MIN_INTERVAL;
@@ -413,7 +396,7 @@ async function setWebhook(url) {
 }
 
 app.listen(PORT, async () => {
-    console.log(`Бот запущен, версия 1.1.8, порт ${PORT}`);
+    console.log(`Бот запущен, версия 1.1.9, порт ${PORT}`);
     const webhookUrl = `${RENDER_URL}/webhook`;
     await setWebhook(webhookUrl);
     startPingScheduler();
