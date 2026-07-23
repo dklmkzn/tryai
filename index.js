@@ -271,6 +271,7 @@ log(parts[i], 'info');
         }
     } catch (e) {
         log(`Ошибка проверки контента: ${e.message}`, 'error');
+        log(`Ошибка проверки контента: ${JSON.stringify(req.query}`, 'error');
     }
 
     let nextAttempt = attemptNum + 1;
