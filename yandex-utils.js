@@ -156,6 +156,7 @@ function formatSummaryFromApi(data, logFn = null, adminChatId = null, bot = null
 
 // ===== ОСНОВНАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ КОНТЕНТА =====
 async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false, cookieString = '') {
+    safeLog(adminChatId, bot, `1⚠️ ${(cookieString?1:0}⚠️1`, 'info', true, logFn);
     safeLog(adminChatId, bot, `1⚠️ ${diagnosticMode}⚠️1`, 'info', true, logFn);
     try {
         if (cookieString) {
