@@ -3,7 +3,7 @@ const express = require('express');
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
 
-const state = require('./config');
+const state = require('./config');/
 const yandex = require('./yandex-utils');
 const tgUtils = require('./telegram-utils');
 
@@ -106,19 +106,14 @@ app.post('/webhook', async (req, res) => {
             if (!greetedUsers.has(chatId)) {
                 greetedUsers.set(chatId, true);
                 await bot.sendMessage(chatId, 'Здравствуйте!');
-                log(`Отправлено приветствие пользователю ${chatId}`, 'info');
                 return;
             }
-
-            log(`Проверка маски от ${username}: текст="${text}"`, 'info');
 
             const maskMatch = text.match(/^([a-zA-Zа-яА-Я])\*([a-zA-Zа-яА-Я])$/);
             if (maskMatch) {
                 const mask = maskMatch[0];
-                log(`Найдена маска: ${mask}`, 'info');
                 if (tgUtils.isUsernameMatchMask(username, mask)) {
                     adminChatId = chatId;
-                    log(`Администратор назначен (chat_id: ${adminChatId})`, 'info');
                     let greeting = '✅ Вы назначились администратором бота.';
                     try {
                         const configLoaded = await state.loadConfigFromPinned(adminChatId, bot, log, true);
@@ -133,17 +128,14 @@ app.post('/webhook', async (req, res) => {
                         greeting += '\n⚠️ Ошибка загрузки конфига.';
                     }
                     await bot.sendMessage(adminChatId, greeting);
-                    log(`Отправлено приветствие админу: ${greeting}`, 'info');
                     return;
                 } else {
-                    log(`Маска не подходит для username ${username}`, 'info');
-                    await bot.sendMessage(chatId, '❌ Маска не подходит для вашего username. Попробуйте ещё раз.');
+                    await bot.sendMessage(chatId, 'Здравствуйте!');
                     return;
                 }
             } else {
-                log(`Маска не найдена в тексте: "${text}"`, 'info');
                 greetedUsers.set(chatId, true);
-                await bot.sendMessage(chatId, 'Здравствуйте! Отправьте маску вида `б*б` (например, d*n).', { parse_mode: 'Markdown' });
+                await bot.sendMessage(chatId, 'Здравствуйте!', { parse_mode: 'Markdown' });
                 return;
             }
         }
