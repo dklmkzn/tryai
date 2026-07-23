@@ -1,4 +1,4 @@
-// index.js — версия 1.1.7
+// index.js — версия 1.1.8
 const express = require('express');
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
@@ -40,17 +40,13 @@ app.post('/webhook', async (req, res) => {
     const text = message.text;
     const username = message.from?.username || 'без username';
     const userId = message.from?.id;
-    const chatIdStr = state.normalizeId ? state.normalizeId(chatId) : (chatId.toString().startsWith('-100') ? chatId.toString().substring(4) : chatId.toString());
-    // normalizeId теперь доступна как функция, но мы её экспортируем из state как метод? Да, она есть в state.
-    // Но лучше импортировать её отдельно, но для простоты используем state.normalizeId, если она определена.
-    // Я добавлю normalizeId в state как метод, но проще вызвать функцию из модуля.
-    const normalizeId = state.normalizeId || ((id) => { const s = id.toString(); return s.startsWith('-100') ? s.substring(4) : s; });
-    const chatIdStrNorm = normalizeId(chatId);
+    const chatIdStrNorm = state.normalizeId(chatId);
 
     log(`📥 Вебхук: chatId=${chatId} (норм: ${chatIdStrNorm}), type=${chatType}, user=${username}`, 'info');
 
     // === ЛИЧНЫЕ СООБЩЕНИЯ ===
     if (chatType === 'private') {
+        // Если администратор уже назначен
         if (chatId === adminChatId) {
             // Конфиг через [[[
             if (text.includes('[[')) {
@@ -117,32 +113,47 @@ app.post('/webhook', async (req, res) => {
 
         // Если админ не назначен
         if (!adminChatId) {
+            // Приветствие
             if (!greetedUsers.has(chatId)) {
                 greetedUsers.set(chatId, true);
                 await bot.sendMessage(chatId, 'Здравствуйте!');
+                log(`Отправлено приветствие пользователю ${chatId}`, 'info');
                 return;
             }
+
+            // Логируем полученный текст и username
+            log(`Проверка маски от ${username}: текст="${text}"`, 'info');
+
             const maskMatch = text.match(/^([a-zA-Zа-яА-Я])\*([a-zA-Zа-яА-Я])$/);
             if (maskMatch) {
                 const mask = maskMatch[0];
+                log(`Найдена маска: ${mask}`, 'info');
                 if (tgUtils.isUsernameMatchMask(username, mask)) {
                     adminChatId = chatId;
-                    log(`Администратор назначен`, 'info');
+                    log(`Администратор назначен (chat_id: ${adminChatId})`, 'info');
                     let greeting = '✅ Вы назначились администратором бота.';
-                    const configLoaded = await state.loadConfigFromPinned(adminChatId, bot, log, true);
-                    if (configLoaded) {
-                        yandex.setYandexToken(state.YANDEX_TOKEN);
-                        greeting += '\nКонфиг загружен из закреплённого сообщения.';
-                    } else {
-                        greeting += '\nКонфиг не найден, используются значения по умолчанию.';
+                    try {
+                        const configLoaded = await state.loadConfigFromPinned(adminChatId, bot, log, true);
+                        if (configLoaded) {
+                            yandex.setYandexToken(state.YANDEX_TOKEN);
+                            greeting += '\nКонфиг загружен из закреплённого сообщения.';
+                        } else {
+                            greeting += '\nКонфиг не найден, используются значения по умолчанию.';
+                        }
+                    } catch (e) {
+                        log(`Ошибка загрузки конфига: ${e.message}`, 'error');
+                        greeting += '\n⚠️ Ошибка загрузки конфига.';
                     }
                     await bot.sendMessage(adminChatId, greeting);
+                    log(`Отправлено приветствие админу: ${greeting}`, 'info');
                     return;
                 } else {
+                    log(`Маска не подходит для username ${username}`, 'info');
                     await bot.sendMessage(chatId, '❌ Маска не подходит для вашего username. Попробуйте ещё раз.');
                     return;
                 }
             } else {
+                log(`Маска не найдена в тексте: "${text}"`, 'info');
                 greetedUsers.set(chatId, true);
                 await bot.sendMessage(chatId, 'Здравствуйте! Отправьте маску вида `б*б` (например, d*n).', { parse_mode: 'Markdown' });
                 return;
@@ -335,7 +346,7 @@ app.get('/ping', (req, res) => res.sendStatus(200));
 
 app.get('/status', (req, res) => {
     res.json({
-        version: '1.1.7',
+        version: '1.1.8',
         uptime: process.uptime(),
         tasksCount: tasks.size,
         activeTasks: Array.from(tasks.keys()),
@@ -402,7 +413,7 @@ async function setWebhook(url) {
 }
 
 app.listen(PORT, async () => {
-    console.log(`Бот запущен, версия 1.1.7, порт ${PORT}`);
+    console.log(`Бот запущен, версия 1.1.8, порт ${PORT}`);
     const webhookUrl = `${RENDER_URL}/webhook`;
     await setWebhook(webhookUrl);
     startPingScheduler();
