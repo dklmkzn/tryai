@@ -156,6 +156,11 @@ function formatSummaryFromApi(data, logFn = null, adminChatId = null, bot = null
 
 // ===== ОСНОВНАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ КОНТЕНТА =====
 async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false, cookieString = '') {
+    // Принудительная диагностика: состояние кук
+if (adminChatId && bot) {
+    const status = cookieString ? `ЗАДАНА (первые 20: ${cookieString.substring(0,20)}...)` : 'ОТСУТСТВУЕТ';
+    bot.sendMessage(adminChatId, `📝 [extractTextFromYaRu] cookieString = ${status}, diagnosticMode = ${diagnosticMode}`).catch(() => {});
+}
     safeLog(adminChatId, bot, `1⚠️ ${(cookieString?1:0)}⚠️1`, 'info', true, logFn);
     safeLog(adminChatId, bot, `1⚠️ ${diagnosticMode}⚠️1`, 'info', true, logFn);
     try {
