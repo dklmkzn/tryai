@@ -1,4 +1,7 @@
-// yandex-utils.js — версия 1.1.16
+// yandex-utils.js — версия 1.1.18
+// Откат проверки на нестабильность: всегда возвращаем status 200,
+// очистка выполняется в parseContent (удаление промо-блоков, мусора).
+
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -6,8 +9,7 @@ let configYandexToken = '';
 
 function setYandexToken(token) {
     configYandexToken = token;
-    // Это сообщение выводится в консоль только при старте (токен пустой) и при загрузке конфига (токен установлен)
-    // Мы его оставляем, так как оно относится к стартовым диагностическим сообщениям (пункт 2-4)
+    // Стартовое диагностическое сообщение (оставляем)
     console.log(`[setYandexToken] токен ${token ? 'установлен (первые 10: ' + token.substring(0,10) + '...)' : 'пустой'}`);
 }
 
@@ -15,7 +17,6 @@ function safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
     if (logFn) {
         logFn(message, level, diagnosticMode);
     } else {
-        // fallback — если logFn не передана, пишем в консоль (но у нас всегда передаётся)
         console.log(`[${level}] ${message}`);
     }
 }
@@ -79,7 +80,15 @@ async function getShortUrl(articleUrl, yandexToken, logFn = null, adminChatId = 
 async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
     try {
         const response = await axios.get(url, {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Referer': 'https://300.ya.ru/'
+            },
             timeout: 15000,
             responseType: 'text'
         });
@@ -87,30 +96,8 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
         const originLink = $('a').filter((i, el) => $(el).text().includes('Перейти на оригинал')).attr('href') || '';
         const fullText = $('body').text();
 
-        // === ПРОВЕРКА НА НЕСТАБИЛЬНОСТЬ (только явные технические маркеры) ===
-
-const isUnstable = (
-    fullText.includes('__sveltekit_') ||
-    fullText.includes('mc.yandex.ru') ||
-    fullText.includes('Краткий пересказ ... доступен только пользователям Яндекс Браузера') ||
-    fullText.includes('Скачайте Браузер') ||
-    fullText.includes('Войти')
-);
-
-if (isUnstable) {
-    safeLog(adminChatId, bot, `Страница нестабильна (обнаружен промо-блок или тех. мусор), длина ${fullText.length}`, 'info', diagnosticMode, logFn);
-    return { status: 202, title: '', content: '', origin: '' };
-}
-        );
-
-        // Если маркеры есть И текст короткий (< 500 символов) — считаем нестабильным
-        if (isUnstable && fullText.length < 500) {
-            safeLog(adminChatId, bot, `Страница ещё не стабилизирована (маркеры + короткий текст, длина ${fullText.length})`, 'info', diagnosticMode, logFn);
-            return { status: 202, title: '', content: '', origin: '' };
-        }
-
-        // Если длина >= 500 или маркеров нет — считаем стабильной
-        safeLog(adminChatId, bot, `📄 Получена стабильная страница ${url}, длина ${fullText.length}`, 'info', diagnosticMode, logFn);
+        // Диагностика: длина страницы (без проверки на нестабильность)
+        safeLog(adminChatId, bot, `📄 Получена страница ${url}, длина ${fullText.length}`, 'info', diagnosticMode, logFn);
 
         const { title, content } = parseContent(fullText);
         return { status: 200, title, content, origin: originLink };
@@ -125,15 +112,28 @@ if (isUnstable) {
 }
 
 function parseContent(fullText) {
+    // Удаляем фразу "Данный формат временно недоступен для этого видео"
     let cleaned = fullText.replace(/Данный формат временно недоступен для этого видео/gi, '');
 
+    // Удаляем всё, что идёт после "Пользовательское соглашение", "API", "Как использовать API"
     const parts = cleaned.split(/(Пользовательское соглашение|API|Как использовать API)/i);
     if (parts.length > 1) {
         cleaned = parts[0].trim();
     }
 
+    // Удаляем строки с "©"
     cleaned = cleaned.replace(/©.*$/gm, '');
 
+    // Удаляем промо-блоки Яндекс Браузера
+    cleaned = cleaned
+        .replace(/Скачайте Браузер.*$/gim, '')
+        .replace(/Краткий пересказ этой и любых других статей доступны только пользователям Яндекс Браузера.*$/gim, '')
+        .replace(/Войти.*$/gim, '');
+
+    // Удаляем лишние переводы строк и пробелы
+    cleaned = cleaned.replace(/\s{2,}/g, '\n').trim();
+
+    // Основной парсинг
     const isYandexGptSummary = /YandexGPT\s+краткий пересказ статьи от нейросети/im.test(cleaned);
     const startMarker = /Пересказ сделан (.{0,50}?)Обновить/s;
     const startMatch = cleaned.match(startMarker);
@@ -159,6 +159,7 @@ function parseContent(fullText) {
         }
     }
 
+    // Финальная очистка
     let cleanText = contentText
         .replace(/\s{2,}/g, '\n')
         .replace(/(\n)(?![•\s])/g, '\n\n')
