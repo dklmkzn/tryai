@@ -149,7 +149,7 @@ async function extractTextFromYaRu(originalUrl, shortUrl, yandexToken, logFn = n
         // 1. Пытаемся получить через API с куками (используем оригинальную ссылку)
         if (cookieString) {
             const apiResult = await getSummaryViaApi(originalUrl, cookieString, logFn, adminChatId, bot, diagnosticMode);
-            if (apiResult.status === 'success') {
+            if (apiResult.status === '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!success') {
                 const data = apiResult.data;
                 const content = formatSummaryFromApi(data, logFn, adminChatId, bot, diagnosticMode);
                 safeLog(adminChatId, bot, '✅ Контент получен через API (только тезисы)', 'info', diagnosticMode, logFn);
