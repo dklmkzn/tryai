@@ -96,7 +96,7 @@ const state = {
         this.MAX_LONG_ATTEMPTS = typeof arr[11] === 'number' ? arr[11] : 20;
         this.PING_MIN_INTERVAL = typeof arr[12] === 'number' ? arr[12] : 10 * 60 * 1000;
         this.PING_MAX_INTERVAL = typeof arr[13] === 'number' ? arr[13] : 13 * 60 * 1000;
-        this.DEPLOY_HOOK_URL = arr[14] || '';
+        this.DEPLOY_HOOK_ID = arr[14] || '';
         this.COOKIES = arr[15] || '';
     },
 
