@@ -87,28 +87,19 @@ app.post('/webhook', async (req, res) => {
 
             // Конфиг через [[[ (обновление с кодированием)
 if (text.includes('[[')) {
-    const arr = state.parseConfigFromCommand(text, log, adminChatId, bot, state.DIAGNOSTIC_MODE);
-    if (arr) {
-        try {
-            if (adminChatId) {
-                bot.sendMessage(adminChatId, `DEBUG: arr[0] (сырой) = ${JSON.stringify(arr[0])}`);
-            }
-            const decodedArr = state.decodeConfig(arr);
-            if (adminChatId) {
-                bot.sendMessage(adminChatId, `DEBUG: decodedArr[0] = ${JSON.stringify(decodedArr[0])}`);
-            }
-            state.applyConfig(decodedArr);
-            if (adminChatId) {
-                bot.sendMessage(adminChatId, `DEBUG: после applyConfig, allowedDomains = ${JSON.stringify(state.allowedDomains)}`);
-            }
-            yandex.setYandexToken(state.YANDEX_TOKEN);
-            await state.updatePinnedConfig(adminChatId, bot, decodedArr, log, state.DIAGNOSTIC_MODE);
-            await bot.sendMessage(adminChatId, '✅ Конфиг обновлён и закреплён (закодирован).');
-        } catch (e) {
-            await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}`);
+    try {
+        const arr = state.extractConfig(text, log, adminChatId, bot, state.DIAGNOSTIC_MODE);
+        if (!arr) {
+            await bot.sendMessage(adminChatId, '❌ Не удалось извлечь массив.');
+            return;
         }
-    } else {
-        await bot.sendMessage(adminChatId, '❌ Не удалось извлечь конфиг.');
+        // Применяем напрямую (массив уже читаемый)
+        state.applyConfig(arr);
+        yandex.setYandexToken(state.YANDEX_TOKEN);
+        await state.updatePinnedConfig(adminChatId, bot, arr, log, state.DIAGNOSTIC_MODE);
+        await bot.sendMessage(adminChatId, '✅ Конфиг обновлён и закреплён (закодирован).');
+    } catch (e) {
+        await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}`);
     }
     return;
 }
