@@ -160,8 +160,9 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
             const apiResult = await getSummaryViaApi(url, cookieString, logFn, adminChatId, bot, diagnosticMode);
             if (apiResult.status === 'success') {
                 const data = apiResult.data;
+safeLog(adminChatId, bot, `⚠️ ${diagnosticMode}⚠️`, 'info', true, logFn);
                 const content = formatSummaryFromApi(data, logFn, adminChatId, bot, diagnosticMode);
-                safeLog(adminChatId, bot, '✅ Контент получен через API (только тезисы)', 'info', diagnosticMode, logFn);
+safeLog(adminChatId, bot, '✅ Контент получен через API (только тезисы)', 'info', diagnosticMode || true, logFn);
                 return {
                     status: 200,
                     title: data.title || '',
