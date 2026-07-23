@@ -1,7 +1,8 @@
-// config.js — версия 1.1.26
-// Состояние и методы бота, обфускация данных в закреплённом сообщении.
+// config.js — версия 1.1.27
+// Состояние и методы бота.
+// Обфускация: кодируем весь JSON массива в закреплённом сообщении.
 
-const VERSION = '1.1.26';
+const VERSION = '1.1.27';
 
 const state = {
     VERSION,
@@ -22,21 +23,7 @@ const state = {
     DEPLOY_HOOK_URL: '',
     COOKIES: '',
 
-    // ===== ОБФУСКАЦИЯ =====
-    encodeConfig(arr) {
-        return arr.map(item => {
-            if (Array.isArray(item)) return this.encodeConfig(item);
-            if (typeof item === 'string') return this.encodeString(item);
-            return item;
-        });
-    },
-    decodeConfig(arr) {
-        return arr.map(item => {
-            if (Array.isArray(item)) return this.decodeConfig(item);
-            if (typeof item === 'string') return this.decodeString(item);
-            return item;
-        });
-    },
+    // ===== ОБФУСКАЦИЯ (упрощённая) =====
     encodeString(str) {
         let encoded = str.replace(/\d/g, d => 9 - parseInt(d));
         encoded = Buffer.from(encoded, 'utf8').toString('base64');
@@ -48,13 +35,11 @@ const state = {
         return decoded;
     },
 
-    // ===== ЛОГИРОВАНИЕ (критические ошибки через logFn, остальное по флагу) =====
+    // ===== ЛОГИРОВАНИЕ =====
     safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
         if (logFn) {
-            // Передаём управление logFn (внутри неё критическая ошибка всегда пройдёт)
             logFn(message, level, diagnosticMode);
         } else {
-            // Если logFn нет — выводим в консоль только при включённой диагностике
             if (diagnosticMode) {
                 console.log(`[${level}] ${message}`);
             }
@@ -74,28 +59,21 @@ const state = {
             return null;
         }
         let match = text.match(/\[\[\[\s*([\s\S]*?)\s*\]\]\]/);
-        let inner = null;
-        if (match) {
-            inner = match[1].trim();
-            this.safeLog(adminChatId, bot, 'extractConfig: найден маркер [[[ ... ]]]', 'info', diagnosticMode, logFn);
-        } else {
-            this.safeLog(adminChatId, bot, 'extractConfig: маркер не найден, ищем JSON-массив', 'info', diagnosticMode, logFn);
-            const arrayMatch = text.match(/(\[\s*\[[\s\S]*?\]\s*\])/);
-            if (arrayMatch) {
-                inner = arrayMatch[1].trim();
-                this.safeLog(adminChatId, bot, 'extractConfig: найден JSON-массив', 'info', diagnosticMode, logFn);
-            } else {
-                this.safeLog(adminChatId, bot, 'extractConfig: JSON-массив не найден', 'warn', diagnosticMode, logFn);
-                return null;
-            }
+        if (!match) {
+            this.safeLog(adminChatId, bot, 'extractConfig: маркер [[[ ... ]]] не найден', 'warn', diagnosticMode, logFn);
+            return null;
         }
-        inner = inner.replace(/^\uFEFF/, '').trim();
-        if (inner.startsWith('"') && inner.endsWith('"')) {
-            inner = inner.substring(1, inner.length - 1);
-        }
-        inner = inner.replace(/\u00A0/g, ' ');
+        let inner = match[1].trim();
+        // Декодируем строку
+        let decoded;
         try {
-            const arr = JSON.parse(inner);
+            decoded = this.decodeString(inner);
+        } catch (e) {
+            this.safeLog(adminChatId, bot, `extractConfig: ошибка декодирования: ${e.message}`, 'error', diagnosticMode, logFn);
+            return null;
+        }
+        try {
+            const arr = JSON.parse(decoded);
             if (Array.isArray(arr) && arr.length === 16) {
                 this.safeLog(adminChatId, bot, `extractConfig: успешно извлечён массив из ${arr.length} элементов`, 'info', diagnosticMode, logFn);
                 return arr;
@@ -105,7 +83,6 @@ const state = {
             }
         } catch (e) {
             this.safeLog(adminChatId, bot, `extractConfig: ошибка парсинга JSON: ${e.message}`, 'error', diagnosticMode, logFn);
-            this.safeLog(adminChatId, bot, `Текст, который парсили: ${inner}`, 'error', diagnosticMode, logFn);
             return null;
         }
     },
@@ -132,38 +109,36 @@ const state = {
         this.COOKIES = arr[15] || '';
     },
 
-async loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMode = false) {
-    if (!adminChatId) {
-        this.safeLog(adminChatId, bot, 'loadConfigFromPinned: adminChatId не задан', 'warn', diagnosticMode, logFn);
-        return false;
-    }
-    try {
-        const chat = await bot.getChat(adminChatId);
-        const pinned = chat.pinned_message;
-        if (!pinned) {
-            this.safeLog(adminChatId, bot, 'loadConfigFromPinned: закреплённое сообщение отсутствует', 'info', diagnosticMode, logFn);
+    async loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMode = false) {
+        if (!adminChatId) {
+            this.safeLog(adminChatId, bot, 'loadConfigFromPinned: adminChatId не задан', 'warn', diagnosticMode, logFn);
             return false;
         }
-        if (!pinned.text) {
-            this.safeLog(adminChatId, bot, 'loadConfigFromPinned: закреплённое сообщение не содержит текст', 'warn', diagnosticMode, logFn);
+        try {
+            const chat = await bot.getChat(adminChatId);
+            const pinned = chat.pinned_message;
+            if (!pinned) {
+                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: закреплённое сообщение отсутствует', 'info', diagnosticMode, logFn);
+                return false;
+            }
+            if (!pinned.text) {
+                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: закреплённое сообщение не содержит текст', 'warn', diagnosticMode, logFn);
+                return false;
+            }
+            const arr = this.extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
+            if (arr) {
+                this.applyConfig(arr);
+                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: конфиг успешно применён', 'info', diagnosticMode, logFn);
+                return true;
+            } else {
+                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: не удалось извлечь массив', 'error', diagnosticMode, logFn);
+                return false;
+            }
+        } catch (e) {
+            this.safeLog(adminChatId, bot, `loadConfigFromPinned: ошибка: ${e.message}`, 'error', diagnosticMode, logFn);
             return false;
         }
-        const arr = this.extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
-        if (arr) {
-            // Декодируем массив
-            const decodedArr = this.decodeConfig(arr);
-            this.applyConfig(decodedArr);
-            this.safeLog(adminChatId, bot, 'loadConfigFromPinned: конфиг успешно применён (декодирован)', 'info', diagnosticMode, logFn);
-            return true;
-        } else {
-            this.safeLog(adminChatId, bot, 'loadConfigFromPinned: не удалось извлечь массив', 'error', diagnosticMode, logFn);
-            return false;
-        }
-    } catch (e) {
-        this.safeLog(adminChatId, bot, `loadConfigFromPinned: ошибка: ${e.message}`, 'error', diagnosticMode, logFn);
-        return false;
-    }
-},
+    },
 
     async updatePinnedConfig(adminChatId, bot, arr, logFn = null, diagnosticMode = false) {
         if (!adminChatId) return false;
@@ -179,9 +154,10 @@ async loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMode = fals
                     this.safeLog(adminChatId, bot, `Не удалось удалить старое: ${e.message}`, 'warn', diagnosticMode, logFn);
                 }
             }
-            // Кодируем массив перед сохранением
-            const encodedArr = this.encodeConfig(arr);
-            const text = `[[[\n${JSON.stringify(encodedArr)}\n]]]`;
+            // Кодируем весь JSON массива
+            const json = JSON.stringify(arr);
+            const encoded = this.encodeString(json);
+            const text = `[[[\n${encoded}\n]]]`;
             const sent = await bot.sendMessage(adminChatId, text);
             await bot.pinChatMessage(adminChatId, sent.message_id);
             this.safeLog(adminChatId, bot, 'Новое закреплённое сообщение установлено (закодировано)', 'info', diagnosticMode, logFn);
