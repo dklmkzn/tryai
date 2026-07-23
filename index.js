@@ -161,7 +161,6 @@ app.post('/webhook', async (req, res) => {
                         const configLoaded = await state.loadConfigFromPinned(adminChatId, bot, log, state.DIAGNOSTIC_MODE);
                         if (configLoaded) {
                             yandex.setYandexToken(state.YANDEX_TOKEN);
-                            greeting += '\nКонфиг загружен из закреплённого сообщения.';
                         } else {
                             greeting += '\nКонфиг не найден, используются значения по умолчанию.';
                         }
