@@ -158,7 +158,7 @@ app.post('/webhook', async (req, res) => {
                     // console.log(`Администратор назначен`); // закомментировано
                     let greeting = '✅ Вы назначились администратором.';
                     try {
-                        const configLoaded = await state.loadConfigFromPinned(adminChatId, bot, log, true);
+                        const configLoaded = await state.loadConfigFromPinned(adminChatId, bot, log, state.DIAGNOSTIC_MODE);
                         if (configLoaded) {
                             yandex.setYandexToken(state.YANDEX_TOKEN);
                             greeting += '\nКонфиг загружен из закреплённого сообщения.';
