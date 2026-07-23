@@ -1,4 +1,5 @@
-// index.js — версия 1.1.15
+// index.js — версия 1.1.16
+const VERSION = '1.1.16';
 const express = require('express');
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
@@ -27,6 +28,18 @@ function log(message, level = 'info', diagnosticMode = false) {
     tgUtils.logMessage(adminChatId, bot, message, level, diagnosticMode || state.DIAGNOSTIC_MODE);
 }
 
+// ===== ВЫВОД ВЕРСИЙ В ЛИЧКУ (если диагностика включена) =====
+function logVersions() {
+    const versions = {
+        'config.js': state.VERSION || '1.1.16',
+        'index.js': VERSION,
+        'yandex-utils.js': yandex.VERSION || '1.1.25',
+        'telegram-utils.js': tgUtils.VERSION || '1.1.16'
+    };
+    const msg = `📋 Версии модулей:\n${Object.entries(versions).map(([k, v]) => `${k}: ${v}`).join('\n')}`;
+    log(msg, 'info');
+}
+
 // ===== ОБРАБОТЧИК ВЕБХУКА =====
 app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
@@ -42,11 +55,7 @@ app.post('/webhook', async (req, res) => {
     const userId = message.from?.id;
     const chatIdStrNorm = state.normalizeId(chatId);
 
-    // До назначения админа лог вебхука не выводим (закомментирован)
-    // log(`📥 Вебхук: chatId=${chatId}...`, 'info');
-
     if (chatType === 'private') {
-        // === АДМИНИСТРАТОР УЖЕ НАЗНАЧЕН ===
         if (chatId === adminChatId) {
             // Конфиг через [[[
             if (text.includes('[[')) {
@@ -57,6 +66,7 @@ app.post('/webhook', async (req, res) => {
                         yandex.setYandexToken(state.YANDEX_TOKEN);
                         await state.updatePinnedConfig(adminChatId, bot, arr, log, state.DIAGNOSTIC_MODE);
                         await bot.sendMessage(adminChatId, '✅ Конфиг обновлён и закреплён.');
+                        if (state.DIAGNOSTIC_MODE) logVersions();
                     } catch (e) {
                         await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}`);
                     }
@@ -72,6 +82,7 @@ app.post('/webhook', async (req, res) => {
                 if (loaded) {
                     yandex.setYandexToken(state.YANDEX_TOKEN);
                     await bot.sendMessage(adminChatId, '✅ Конфиг перезагружен.');
+                    if (state.DIAGNOSTIC_MODE) logVersions();
                 } else {
                     await bot.sendMessage(adminChatId, '❌ Не удалось загрузить конфиг.');
                 }
@@ -119,7 +130,7 @@ app.post('/webhook', async (req, res) => {
                 return;
             }
 
-            // Обработка ссылки (только диагностика, если включена)
+            // Обработка ссылки
             await tgUtils.processUrl(chatId, text, null, {
                 bot,
                 tasks,
@@ -136,52 +147,37 @@ app.post('/webhook', async (req, res) => {
 
         // === АДМИНИСТРАТОР ЕЩЁ НЕ НАЗНАЧЕН ===
         if (!adminChatId) {
-            // Приветствие
             if (!greetedUsers.has(chatId)) {
                 greetedUsers.set(chatId, true);
                 await bot.sendMessage(chatId, 'Здравствуйте!');
-                // Лог приветствия закомментирован (не выводим)
-                // log(`Отправлено приветствие пользователю ${chatId}`, 'info');
                 return;
             }
-
-            // Проверка маски (логи закомментированы)
-            // log(`Проверка маски от ${username}: текст="${text}"`, 'info');
 
             const maskMatch = text.match(/^([a-zA-Zа-яА-Я])\*([a-zA-Zа-яА-Я])$/);
             if (maskMatch) {
                 const mask = maskMatch[0];
-                // log(`Найдена маска: ${mask}`, 'info');
                 if (tgUtils.isUsernameMatchMask(username, mask)) {
                     adminChatId = chatId;
-                    // Сообщение о назначении не выводим в консоль, только в личку (без ID)
-                    // console.log(`Администратор назначен`); // закомментировано
                     let greeting = '✅ Вы назначились администратором.';
                     try {
                         const configLoaded = await state.loadConfigFromPinned(adminChatId, bot, log, state.DIAGNOSTIC_MODE);
                         if (configLoaded) {
                             yandex.setYandexToken(state.YANDEX_TOKEN);
+                            if (state.DIAGNOSTIC_MODE) logVersions();
                         } else {
                             greeting += '\nКонфиг не найден, используются значения по умолчанию.';
                         }
                     } catch (e) {
-                        // Ошибка загрузки конфига — логируем в личку (если диагностика включена)
                         log(`Ошибка загрузки конфига: ${e.message}`, 'error');
                         greeting += '\n⚠️ Ошибка загрузки конфига.';
                     }
                     await bot.sendMessage(adminChatId, greeting);
-                    // Лог отправки приветствия админу закомментирован
-                    // log(`Отправлено приветствие админу: ${greeting}`, 'info');
                     return;
                 } else {
-                    // Маска не подходит — логируем в личку (если диагностика включена)
-                    // log(`Маска не подходит для username ${username}`, 'info');
                     await bot.sendMessage(chatId, 'Здравствуйте!');
                     return;
                 }
             } else {
-                // Маска не найдена — логируем в личку (если диагностика включена)
-                // log(`Маска не найдена в тексте: "${text}"`, 'info');
                 greetedUsers.set(chatId, true);
                 await bot.sendMessage(chatId, 'Здравствуйте!', { parse_mode: 'Markdown' });
                 return;
@@ -195,7 +191,6 @@ app.post('/webhook', async (req, res) => {
 
     if (isChannel) {
         if (!state.allowedChannels.includes(chatIdStrNorm)) {
-            // Лог только в личку, если диагностика включена
             log(`❌ Канал ${chatId} не разрешён`, 'error');
             return;
         }
@@ -219,7 +214,6 @@ app.post('/webhook', async (req, res) => {
         }
     }
 
-    // Проверка домена
     const isDomainCheckSkipped = (isChannel && state.allowedChannelsNoDomainCheck.includes(chatIdStrNorm)) ||
                                  (isGroup && state.allowedGroupsNoDomainCheck.includes(chatIdStrNorm));
     const urlMatch = text.match(/https?:\/\/[^\s]+/);
@@ -268,9 +262,8 @@ app.post('/webhook', async (req, res) => {
 app.get('/process', async (req, res) => {
     res.sendStatus(200);
 
-    const { shortUrl, chatId, messageId, attempt, phase } = req.query;
-    if (!shortUrl || !chatId || !messageId) {
-        // Критическая ошибка — отправляем в личку админу (если есть) и в консоль (критические ошибки всегда в консоль)
+    const { shortUrl, originalUrl, chatId, messageId, attempt, phase } = req.query;
+    if (!shortUrl || !chatId || !messageId || !originalUrl) {
         log('Недостаточно параметров в /process', 'error');
         return;
     }
@@ -279,20 +272,21 @@ app.get('/process', async (req, res) => {
     const currentPhase = phase || 'active';
 
     try {
+        if (adminChatId) {
+            bot.sendMessage(adminChatId, `📝 [index.js] Вызов extractTextFromYaRu с originalUrl=${originalUrl}, shortUrl=${shortUrl}`).catch(() => {});
+        }
 
-if (adminChatId) {
-    bot.sendMessage(adminChatId, `📝 [index.js] Вызов extractTextFromYaRu с cookieString=${state.COOKIES ? 'задана (первые 20: ' + state.COOKIES.substring(0,20) + '...)' : 'пустая'}`).catch(() => {});
-}
-        
         const content = await yandex.extractTextFromYaRu(
+            originalUrl,
             shortUrl,
             state.YANDEX_TOKEN,
             tgUtils.logMessage,
             adminChatId,
             bot,
             state.DIAGNOSTIC_MODE,
-    state.COOKIES   // <-- передаём куки
+            state.COOKIES
         );
+
         if (content.status === 200 && content.content && content.content.length > 100) {
             const parts = yandex.formatNews(content.title, content.content);
             const keyboard = {
@@ -300,7 +294,6 @@ if (adminChatId) {
                     [{ text: 'Открыть пересказ на 300.ya.ru', url: shortUrl }]
                 ]
             };
-            // Отправляем или редактируем сообщение (диагностика через log, если включена)
             await bot.editMessageText(parts[0], {
                 chat_id: chatId,
                 message_id: parseInt(messageId),
@@ -327,13 +320,10 @@ if (adminChatId) {
             }
             return;
         } else if (content.status === 202) {
-            // Страница ещё не стабилизировалась — ничего не делаем, процесс запланирует повтор
             log('Страница ещё не стабилизирована, ожидание...', 'info');
-            // Не удаляем задачу, она продолжит жить
         }
     } catch (e) {
         log(`Ошибка проверки контента: ${e.message}`, 'error');
-        // Дополнительная диагностика ошибки
         if (e.message && e.message.includes('ETELEGRAM')) {
             log(`Текст, вызвавший ошибку (первые 500): ${parts ? parts[0]?.substring(0,500) : 'нет данных'}`, 'error');
         }
@@ -371,6 +361,7 @@ if (adminChatId) {
 
     const params = {
         shortUrl,
+        originalUrl,
         chatId,
         messageId,
         attempt: nextAttempt,
@@ -392,7 +383,7 @@ app.get('/ping', (req, res) => res.sendStatus(200));
 
 app.get('/status', (req, res) => {
     res.json({
-        version: '1.1.14',
+        version: VERSION,
         uptime: process.uptime(),
         tasksCount: tasks.size,
         activeTasks: Array.from(tasks.keys()),
@@ -411,7 +402,6 @@ function startPingScheduler() {
 
     function doPing() {
         axios.get(`${RENDER_URL}/ping`).catch(err => {
-            // Критическая ошибка — выводится в консоль и в личку (если админ есть)
             console.error('Дежурный пинг не удался:', err.message);
             if (adminChatId) {
                 tgUtils.logMessage(adminChatId, bot, `⚠️ Дежурный пинг не удался: ${err.message}`, 'error', state.DIAGNOSTIC_MODE);
@@ -427,7 +417,6 @@ async function setWebhook(url) {
     if (!url) {
         const msg = 'RENDER_URL не определён, вебхук не может быть установлен';
         console.error(msg);
-        // Ошибка установки вебхука — выводим в консоль (админа может ещё не быть)
         return false;
     }
     const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/setWebhook?url=${encodeURIComponent(url)}`;
@@ -435,14 +424,13 @@ async function setWebhook(url) {
         const response = await axios.get(apiUrl);
         if (response.data && response.data.ok) {
             console.log(`Вебхук установлен на ${url}`);
-            // Сообщение админу отправляем только если админ есть и диагностика включена
             if (adminChatId) {
                 tgUtils.logMessage(adminChatId, bot, `✅ Вебхук установлен на ${url}`, 'info', state.DIAGNOSTIC_MODE);
             }
             return true;
         } else {
             const msg = `Ошибка установки вебхука: ${response.data.description || 'неизвестная ошибка'}`;
-            console.error(msg); // в консоль всегда
+            console.error(msg);
             if (adminChatId) {
                 tgUtils.logMessage(adminChatId, bot, `⚠️ ${msg}`, 'error', state.DIAGNOSTIC_MODE);
             }
@@ -450,7 +438,7 @@ async function setWebhook(url) {
         }
     } catch (e) {
         const msg = `Ошибка при запросе к Telegram API: ${e.message}`;
-        console.error(msg); // в консоль всегда
+        console.error(msg);
         if (adminChatId) {
             tgUtils.logMessage(adminChatId, bot, `⚠️ ${msg}`, 'error', state.DIAGNOSTIC_MODE);
         }
@@ -459,8 +447,7 @@ async function setWebhook(url) {
 }
 
 app.listen(PORT, async () => {
-    // Только стартовые сообщения в консоль
-    console.log(`Бот запущен, версия 1.1.14, порт ${PORT}`);
+    console.log(`Бот запущен, версия ${VERSION}, порт ${PORT}`);
     const webhookUrl = `${RENDER_URL}/webhook`;
     await setWebhook(webhookUrl);
     startPingScheduler();
