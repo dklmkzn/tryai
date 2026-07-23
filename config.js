@@ -1,5 +1,5 @@
 // config.js — версия 1.1.16
-const VERSION = '1.1.25';
+const VERSION = '1.1.225';
 
 const state = {
     VERSION,
