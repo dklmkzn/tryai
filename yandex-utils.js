@@ -1,7 +1,6 @@
 // yandex-utils.js — версия 1.1.26
-// Получение контента через API 300.ya.ru с куками (originalUrl), fallback на парсинг (shortUrl).
+// Функции для работы с 300.ya.ru: API с куками, парсинг, форматирование.
 
-const VERSION = '1.1.25-1';
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -13,10 +12,12 @@ function setYandexToken(token) {
 }
 
 function safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
-    if (logFn) {
-        logFn(message, level, diagnosticMode);
-    } else {
-        console.log(`[${level}] ${message}`);
+    if (diagnosticMode) {
+        if (logFn) {
+            logFn(message, level, diagnosticMode);
+        } else {
+            console.log(`[${level}] ${message}`);
+        }
     }
 }
 
@@ -30,7 +31,7 @@ function escapeHtml(text) {
         .replace(/'/g, '&#039;');
 }
 
-// ===== API-МЕТОД С КУКАМИ =====
+// ===== API-МЕТОД С КУКАМИ (только тезисы) =====
 async function getSummaryViaApi(articleUrl, cookieString, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
     const BASE_URL = 'https://300.ya.ru/api';
     const session = axios.create({
@@ -98,57 +99,24 @@ async function getSummaryViaApi(articleUrl, cookieString, logFn = null, adminCha
     }
 }
 
-// ===== ФОРМАТИРОВАНИЕ РЕЗУЛЬТАТА API (только тезисы) =====
+// ===== ФОРМАТИРОВАНИЕ РЕЗУЛЬТАТА API (только тезисы, без ссылки) =====
 function formatSummaryFromApi(data, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
     let parts = [];
-
-    // Диагностика
-    const keys = Object.keys(data);
-    safeLog(adminChatId, bot, `📦 Ключи ответа API: ${keys.join(', ')}`, 'info', diagnosticMode, logFn);
-
-    if (data.thesis) {
-        const thesisCount = data.thesis.length;
-        safeLog(adminChatId, bot, `📊 Тезисов: ${thesisCount}`, 'info', diagnosticMode, logFn);
-    } else {
-        safeLog(adminChatId, bot, '⚠️ Поле "thesis" отсутствует', 'warn', diagnosticMode, logFn);
-    }
-
-    // Формируем тезисы
     if (data.thesis && data.thesis.length) {
         data.thesis.forEach((t) => {
             parts.push(`• ${escapeHtml(t.content)}`);
         });
-    } else if (data.chapters && data.chapters.length) {
-        // Fallback на главы (если thesis нет)
-        safeLog(adminChatId, bot, '⚠️ Используем тезисы из глав (fallback)', 'warn', diagnosticMode, logFn);
-        data.chapters.forEach((ch) => {
-            if (ch.theses && ch.theses.length) {
-                ch.theses.forEach((t) => {
-                    parts.push(`• ${escapeHtml(t.content)}`);
-                });
-            }
-        });
     }
-
-    // if (data.sharing_url) {
-    //     parts.push(`<a href="${escapeHtml(data.sharing_url)}">Открыть пересказ на 300.ya.ru</a>`);
-    // }
-
+    // Ссылка не добавляется в текст — только в кнопку
     return parts.join('\n');
 }
 
 // ===== ОСНОВНАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ КОНТЕНТА =====
-async function extractTextFromYaRu(originalUrl, shortUrl, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false, cookieString = '') {
-    // Принудительная диагностика
-    // if (adminChatId && bot) {
-    //     const status = cookieString ? `ЗАДАНА (первые 20: ${cookieString.substring(0,20)}...)` : 'ОТСУТСТВУЕТ';
-    //     bot.sendMessage(adminChatId, `📝 [extractTextFromYaRu] originalUrl=${originalUrl}, shortUrl=${shortUrl}, cookieString=${status}, diagnosticMode=${diagnosticMode}`).catch(() => {});
-    // }
-
+async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false, cookieString = '') {
     try {
-        // 1. Пытаемся получить через API с куками (используем оригинальную ссылку)
+        // 1. Пытаемся получить через API с куками
         if (cookieString) {
-            const apiResult = await getSummaryViaApi(originalUrl, cookieString, logFn, adminChatId, bot, diagnosticMode);
+            const apiResult = await getSummaryViaApi(url, cookieString, logFn, adminChatId, bot, diagnosticMode);
             if (apiResult.status === 'success') {
                 const data = apiResult.data;
                 const content = formatSummaryFromApi(data, logFn, adminChatId, bot, diagnosticMode);
@@ -160,15 +128,12 @@ async function extractTextFromYaRu(originalUrl, shortUrl, yandexToken, logFn = n
                     origin: data.sharing_url || ''
                 };
             } else {
-//await
-bot.sendMessage(adminChatId, `❌❌❌❌❌❌${diagnosticMode}`);
                 safeLog(adminChatId, bot, `⚠️ API вернул ошибку, переходим к парсингу страницы: ${apiResult.message}`, 'warn', diagnosticMode, logFn);
             }
         }
 
-        // 2. Fallback: парсинг страницы (используем короткую ссылку)
-        const urlToParse = shortUrl || originalUrl;
-        const response = await axios.get(urlToParse, {
+        // 2. Fallback: парсинг страницы
+        const response = await axios.get(url, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -194,7 +159,7 @@ bot.sendMessage(adminChatId, `❌❌❌❌❌❌${diagnosticMode}`);
         }
         return { status: 200, title, content, origin: originLink };
     } catch (e) {
-        const errMsg = `Ошибка получения контента: ${e.message}`;
+        const errMsg = `Ошибка получения контента (парсинг): ${e.message}`;
         safeLog(adminChatId, bot, errMsg, 'error', diagnosticMode, logFn);
         if (e.response) {
             safeLog(adminChatId, bot, `Статус: ${e.response.status}`, 'error', diagnosticMode, logFn);
@@ -254,7 +219,7 @@ function parseContent(fullText) {
     return { title: titleText, content: cleanText };
 }
 
-// ===== ФОРМАТИРОВАНИЕ ДЛЯ ОТПРАВКИ =====
+// ===== ФОРМАТИРОВАНИЕ ДЛЯ ОТПРАВКИ (с заголовком) =====
 function formatNews(title, content) {
     const safeTitle = escapeHtml(title);
     const safeContent = escapeHtml(content);
@@ -266,7 +231,7 @@ function formatNews(title, content) {
 
     const fullTitle = (safeTitle ? `${safeTitle}\n` : '') + 'Пересказ на 300.ya.ru';
     const formattedTitle = safeTitle ? `<b>${safeTitle}</b>` : '';
-    const fullText = formattedTitle + (safeContent ? `\n<blockquote>\n<b>Пересказ YandexGPT на 300.ya.ru</b>\n\n${safeContent}</blockquote>` : '');
+    const fullText = formattedTitle + (safeContent ? `\n<blockquote>\n<b>Пересказ на 300.ya.ru</b>\n\n${safeContent}</blockquote>` : '');
 
     if (fullText.length <= MAX_MESSAGE_LENGTH) {
         return [fullText];
@@ -351,7 +316,6 @@ async function getShortUrl(articleUrl, yandexToken, logFn = null, adminChatId = 
 }
 
 module.exports = {
-    VERSION,
     getShortUrl,
     extractTextFromYaRu,
     parseContent,
