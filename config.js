@@ -16,7 +16,7 @@ const state = {
     MAX_LONG_ATTEMPTS: 20,
     PING_MIN_INTERVAL: 10 * 60 * 1000,
     PING_MAX_INTERVAL: 13 * 60 * 1000,
-    DEPLOY_HOOK_URL: '',
+    DEPLOY_HOOK_ID: '',
     COOKIES: '',
 
     // ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ЛОГИРОВАНИЯ =====
@@ -95,7 +95,7 @@ const state = {
         this.MAX_LONG_ATTEMPTS = typeof arr[11] === 'number' ? arr[11] : 20;
         this.PING_MIN_INTERVAL = typeof arr[12] === 'number' ? arr[12] : 10 * 60 * 1000;
         this.PING_MAX_INTERVAL = typeof arr[13] === 'number' ? arr[13] : 13 * 60 * 1000;
-        this.DEPLOY_HOOK_URL = arr[14] || '';
+        this.DEPLOY_HOOK_ID = arr[14] || '';
         this.COOKIES = arr[15] || '';
     },
 
