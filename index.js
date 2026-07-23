@@ -1,5 +1,5 @@
 // index.js — версия 1.1.24
-const VERSION = '1.1.25';
+const VERSION = '1.1.225';
 const express = require('express');
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
@@ -275,9 +275,9 @@ app.get('/process', async (req, res) => {
     const currentPhase = phase || 'active';
 
     try {
-        if (adminChatId) {
-            bot.sendMessage(adminChatId, `📝 [index.js] Вызов extractTextFromYaRu с originalUrl=${originalUrl}, shortUrl=${shortUrl}`).catch(() => {});
-        }
+        // if (adminChatId) {
+        //     bot.sendMessage(adminChatId, `📝 [index.js] Вызов extractTextFromYaRu с originalUrl=${originalUrl}, shortUrl=${shortUrl}`).catch(() => {});
+        // }
 
         const content = await yandex.extractTextFromYaRu(
             originalUrl,
