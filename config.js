@@ -1,4 +1,4 @@
-// config.js — версия 1.1.7
+// config.js — версия 1.1.8
 // Состояние бота в едином объекте state, экспортируемом по ссылке.
 
 const state = {
@@ -9,13 +9,20 @@ const state = {
     allowedChannelsNoDomainCheck: [],
     allowedGroupsNoDomainCheck: [],
     YANDEX_TOKEN: '',
-    DIAGNOSTIC_MODE: true,
+    DIAGNOSTIC_MODE: false,
     ACTIVE_INTERVAL: 3000,
     MAX_ACTIVE_ATTEMPTS: 100,
     LONG_INTERVAL: 60000,
     MAX_LONG_ATTEMPTS: 20,
     PING_MIN_INTERVAL: 10 * 60 * 1000,
-    PING_MAX_INTERVAL: 13 * 60 * 1000
+    PING_MAX_INTERVAL: 13 * 60 * 1000,
+
+    // === ФУНКЦИЯ НОРМАЛИЗАЦИИ ID ===
+    normalizeId(id) {
+        const str = id.toString();
+        if (str.startsWith('-100')) return str.substring(4);
+        return str;
+    }
 };
 
 // ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ЛОГИРОВАНИЯ =====
@@ -28,12 +35,6 @@ function safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
 }
 
 // ===== ОСНОВНЫЕ ФУНКЦИИ =====
-
-function normalizeId(id) {
-    const str = id.toString();
-    if (str.startsWith('-100')) return str.substring(4);
-    return str;
-}
 
 function extractConfig(text, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
     if (!text) {
