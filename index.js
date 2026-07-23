@@ -254,6 +254,7 @@ app.get('/process', async (req, res) => {
                         parse_mode: 'HTML',
                         reply_markup: keyboard
                     });
+                    log(parts[i], 'info');
                 }
             }
             if (content.origin) {
