@@ -260,6 +260,9 @@ app.post('/webhook', async (req, res) => {
 
 // ===== /process =====
 app.get('/process', async (req, res) => {
+
+    bot.sendMessage(adminChatId, `❌❌❌ ${state.DIAGNOSTIC_MODE}`);
+    
     res.sendStatus(200);
 
     const { shortUrl, originalUrl, chatId, messageId, attempt, phase } = req.query;
