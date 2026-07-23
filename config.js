@@ -1,21 +1,22 @@
-// config.js — версия 1.1.6
-// Настройки бота: переменные конфигурации, работа с конфигом.
+// config.js — версия 1.1.7
+// Состояние бота в едином объекте state, экспортируемом по ссылке.
 
-// ===== ПЕРЕМЕННЫЕ (по умолчанию) =====
-let allowedDomains = ['nplus1.ru', 'naked-science.ru', '300.ya.ru'];
-let allowedUsernames = [];
-let allowedChannels = [];
-let allowedGroups = [];
-let allowedChannelsNoDomainCheck = [];
-let allowedGroupsNoDomainCheck = [];
-let YANDEX_TOKEN = '';
-let DIAGNOSTIC_MODE = false;
-let ACTIVE_INTERVAL = 3000;
-let MAX_ACTIVE_ATTEMPTS = 100;
-let LONG_INTERVAL = 60000;
-let MAX_LONG_ATTEMPTS = 20;
-let PING_MIN_INTERVAL = 10 * 60 * 1000;
-let PING_MAX_INTERVAL = 13 * 60 * 1000;
+const state = {
+    allowedDomains: ['nplus1.ru', 'naked-science.ru', '300.ya.ru'],
+    allowedUsernames: [],
+    allowedChannels: [],
+    allowedGroups: [],
+    allowedChannelsNoDomainCheck: [],
+    allowedGroupsNoDomainCheck: [],
+    YANDEX_TOKEN: '',
+    DIAGNOSTIC_MODE: false,
+    ACTIVE_INTERVAL: 3000,
+    MAX_ACTIVE_ATTEMPTS: 100,
+    LONG_INTERVAL: 60000,
+    MAX_LONG_ATTEMPTS: 20,
+    PING_MIN_INTERVAL: 10 * 60 * 1000,
+    PING_MAX_INTERVAL: 13 * 60 * 1000
+};
 
 // ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ЛОГИРОВАНИЯ =====
 function safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
@@ -80,21 +81,20 @@ function applyConfig(arr) {
     if (!Array.isArray(arr) || arr.length !== 14) {
         throw new Error('Массив должен содержать ровно 14 элементов');
     }
-    allowedDomains = arr[0] || [];
-    allowedUsernames = arr[1] || [];
-    allowedChannels = arr[2] || [];
-    allowedGroups = arr[3] || [];
-    allowedChannelsNoDomainCheck = arr[4] || [];
-    allowedGroupsNoDomainCheck = arr[5] || [];
-    YANDEX_TOKEN = arr[6] || '';
-    DIAGNOSTIC_MODE = typeof arr[7] === 'boolean' ? arr[7] : false;
-    ACTIVE_INTERVAL = typeof arr[8] === 'number' ? arr[8] : 3000;
-    MAX_ACTIVE_ATTEMPTS = typeof arr[9] === 'number' ? arr[9] : 100;
-    LONG_INTERVAL = typeof arr[10] === 'number' ? arr[10] : 60000;
-    MAX_LONG_ATTEMPTS = typeof arr[11] === 'number' ? arr[11] : 20;
-    PING_MIN_INTERVAL = typeof arr[12] === 'number' ? arr[12] : 10 * 60 * 1000;
-    PING_MAX_INTERVAL = typeof arr[13] === 'number' ? arr[13] : 13 * 60 * 1000;
-    // Логирование успешного применения будет в вызывающем коде
+    state.allowedDomains = arr[0] || [];
+    state.allowedUsernames = arr[1] || [];
+    state.allowedChannels = arr[2] || [];
+    state.allowedGroups = arr[3] || [];
+    state.allowedChannelsNoDomainCheck = arr[4] || [];
+    state.allowedGroupsNoDomainCheck = arr[5] || [];
+    state.YANDEX_TOKEN = arr[6] || '';
+    state.DIAGNOSTIC_MODE = typeof arr[7] === 'boolean' ? arr[7] : false;
+    state.ACTIVE_INTERVAL = typeof arr[8] === 'number' ? arr[8] : 3000;
+    state.MAX_ACTIVE_ATTEMPTS = typeof arr[9] === 'number' ? arr[9] : 100;
+    state.LONG_INTERVAL = typeof arr[10] === 'number' ? arr[10] : 60000;
+    state.MAX_LONG_ATTEMPTS = typeof arr[11] === 'number' ? arr[11] : 20;
+    state.PING_MIN_INTERVAL = typeof arr[12] === 'number' ? arr[12] : 10 * 60 * 1000;
+    state.PING_MAX_INTERVAL = typeof arr[13] === 'number' ? arr[13] : 13 * 60 * 1000;
 }
 
 async function loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMode = false) {
@@ -144,24 +144,29 @@ async function loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMo
     }
 }
 
-// ===== ЭКСПОРТ =====
-module.exports = {
-    allowedDomains,
-    allowedUsernames,
-    allowedChannels,
-    allowedGroups,
-    allowedChannelsNoDomainCheck,
-    allowedGroupsNoDomainCheck,
-    YANDEX_TOKEN,
-    DIAGNOSTIC_MODE,
-    ACTIVE_INTERVAL,
-    MAX_ACTIVE_ATTEMPTS,
-    LONG_INTERVAL,
-    MAX_LONG_ATTEMPTS,
-    PING_MIN_INTERVAL,
-    PING_MAX_INTERVAL,
-    normalizeId,
-    extractConfig,
-    applyConfig,
-    loadConfigFromPinned
-};
+async function updatePinnedConfig(adminChatId, bot, arr, logFn = null, diagnosticMode = false) {
+    if (!adminChatId) return false;
+    try {
+        const chat = await bot.getChat(adminChatId);
+        const oldPinned = chat.pinned_message;
+        if (oldPinned) {
+            try {
+                await bot.unpinChatMessage(adminChatId);
+                await bot.deleteMessage(adminChatId, oldPinned.message_id);
+                safeLog(adminChatId, bot, 'Старое закреплённое сообщение удалено', 'info', diagnosticMode, logFn);
+            } catch (e) {
+                safeLog(adminChatId, bot, `Не удалось удалить старое: ${e.message}`, 'warn', diagnosticMode, logFn);
+            }
+        }
+        const text = `[[[\n${JSON.stringify(arr)}\n]]]`;
+        const sent = await bot.sendMessage(adminChatId, text);
+        await bot.pinChatMessage(adminChatId, sent.message_id);
+        safeLog(adminChatId, bot, 'Новое закреплённое сообщение установлено', 'info', diagnosticMode, logFn);
+        return true;
+    } catch (e) {
+        safeLog(adminChatId, bot, `Ошибка в updatePinnedConfig: ${e.message}`, 'error', diagnosticMode, logFn);
+        return false;
+    }
+}
+
+module.exports = state;
