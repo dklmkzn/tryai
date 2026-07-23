@@ -64,11 +64,11 @@ const state = {
         inner = inner.replace(/\u00A0/g, ' ');
         try {
             const arr = JSON.parse(inner);
-            if (Array.isArray(arr) && arr.length === 14) {
+            if (Array.isArray(arr) && arr.length === 16) {
                 this.safeLog(adminChatId, bot, `extractConfig: успешно извлечён массив из ${arr.length} элементов`, 'info', diagnosticMode, logFn);
                 return arr;
             } else {
-                this.safeLog(adminChatId, bot, `extractConfig: массив имеет длину ${arr.length}, ожидается 14`, 'warn', diagnosticMode, logFn);
+                this.safeLog(adminChatId, bot, `extractConfig: массив имеет длину ${arr.length}, ожидается 16`, 'warn', diagnosticMode, logFn);
                 return null;
             }
         } catch (e) {
