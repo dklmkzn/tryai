@@ -128,23 +128,16 @@ const state = {
             const arr = this.extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
             if (arr) {
                 this.applyConfig(arr);
-                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: конфиг успешно применён', 'info', diagnosticMode, logFn);
                 if (adminChatId) {
                     bot.sendMessage(adminChatId, '✅ Конфиг загружен.').catch(() => {});
                 }
                 return true;
             } else {
-                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: не удалось извлечь массив', 'warn', diagnosticMode, logFn);
-                if (adminChatId) {
-                    bot.sendMessage(adminChatId, '❌ Не удалось извлечь массив.').catch(() => {});
-                }
+                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: не удалось извлечь массив', 'error', diagnosticMode, logFn);
                 return false;
             }
         } catch (e) {
             this.safeLog(adminChatId, bot, `loadConfigFromPinned: ошибка: ${e.message}`, 'error', diagnosticMode, logFn);
-            if (adminChatId) {
-                bot.sendMessage(adminChatId, `❌ Ошибка загрузки конфига: ${e.message}`).catch(() => {});
-            }
             return false;
         }
     },
