@@ -1,6 +1,4 @@
-// yandex-utils.js — версия 1.1.6
-// Функции для работы с 300.ya.ru.
-
+// yandex-utils.js — версия 1.1.7
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -8,10 +6,7 @@ let configYandexToken = '';
 
 function setYandexToken(token) {
     configYandexToken = token;
-    // Диагностика выводится в консоль всегда (при старте до назначения админа)
-    console.log(`[setYandexToken] токен ${token ? 'установлен (первые 10 символов: ' + token.substring(0,10) + '...)' : 'пустой'}`);
-    // Если админ уже есть, можно отправить в приват через logFn, но здесь этого нет.
-    // Лучше оставить только консоль.
+    console.log(`[setYandexToken] токен ${token ? 'установлен (первые 10: ' + token.substring(0,10) + '...)' : 'пустой'}`);
 }
 
 function safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
@@ -23,7 +18,7 @@ function safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
 }
 
 async function getShortUrl(articleUrl, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
-    // Определяем, какой токен используется
+    // Используем переданный токен или внутренний
     const usedToken = yandexToken || configYandexToken;
     const tokenPreview = usedToken ? usedToken.substring(0,10) + '...' : 'НЕ ЗАДАН';
     safeLog(adminChatId, bot, `[getShortUrl] используемый токен: ${tokenPreview} (передан yandexToken=${!!yandexToken}, configYandexToken=${!!configYandexToken})`, 'info', diagnosticMode, logFn);
@@ -80,7 +75,6 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
         const originLink = $('a').filter((i, el) => $(el).text().includes('Перейти на оригинал')).attr('href') || '';
         const fullText = $('body').text();
 
-        // Диагностика
         const diagMsg = `📄 Получена страница ${url}, первые 500 символов:\n${fullText.substring(0, 500)}\n🔍 Фраза "Данный формат временно недоступен для этого видео" ${fullText.includes('Данный формат временно недоступен для этого видео') ? 'ПРИСУТСТВУЕТ' : 'ОТСУТСТВУЕТ'}`;
         safeLog(adminChatId, bot, diagMsg, 'info', diagnosticMode, logFn);
 
