@@ -121,19 +121,19 @@ const state = {
                 }
                 return false;
             }
-            this.safeLog(adminChatId, bot, `loadConfigFromPinned: текст закреплённого сообщения получен, длина = ${pinned.text.length}`, 'info', diagnosticMode, logFn);
+            this.safeLog(adminChatId, bot, `loadConfigFromPinned: текст получен = ${pinned.text}`, 'info', diagnosticMode, logFn);
             const arr = this.extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
             if (arr) {
                 this.applyConfig(arr);
                 this.safeLog(adminChatId, bot, 'loadConfigFromPinned: конфиг успешно применён', 'info', diagnosticMode, logFn);
                 if (adminChatId) {
-                    bot.sendMessage(adminChatId, '✅ Конфиг загружен из закреплённого сообщения.').catch(() => {});
+                    bot.sendMessage(adminChatId, '✅ Конфиг загружен.').catch(() => {});
                 }
                 return true;
             } else {
-                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: не удалось извлечь массив из закреплённого сообщения', 'warn', diagnosticMode, logFn);
+                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: не удалось извлечь массив', 'warn', diagnosticMode, logFn);
                 if (adminChatId) {
-                    bot.sendMessage(adminChatId, '❌ Не удалось извлечь массив из закреплённого сообщения.').catch(() => {});
+                    bot.sendMessage(adminChatId, '❌ Не удалось извлечь массив.').catch(() => {});
                 }
                 return false;
             }
