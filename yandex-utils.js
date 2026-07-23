@@ -1,4 +1,4 @@
-// yandex-utils.js — версия 1.1.14
+// yandex-utils.js — версия 1.1.16
 const axios = require('axios');
 const cheerio = require('cheerio');
 
