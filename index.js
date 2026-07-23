@@ -23,131 +23,6 @@ yandex.setYandexToken(state.YANDEX_TOKEN);
 
 
 
-// ===== ФУНКЦИЯ ДЛЯ /test: ОПРОС API 300.YA.RU =====
-async function pollYandexSummary(articleUrl, token) {
-    const axios = require('axios');
-    const baseUrl = 'https://300.ya.ru/api/generation';
-    
-    // 1. Запуск генерации
-    let response = await axios.post(baseUrl, {
-        article_url: articleUrl,
-        ignore_cache: false,
-        type: 'article'
-    }, {
-        headers: {
-            'Authorization': `OAuth ${token}`,
-            'Content-Type': 'application/json'
-        },
-        timeout: 30000
-    });
-
-    let data = response.data;
-    let statusCode = data.status_code;
-
-    // Если сразу готово (кэш)
-    if (statusCode === 2) {
-        return data;
-    }
-
-    // Ошибка
-    if (statusCode === 3) {
-        throw new Error(`Ошибка генерации: ${JSON.stringify(data)}`);
-    }
-
-    // Если статус 1 — идёт генерация
-    if (statusCode !== 1) {
-        throw new Error(`Неизвестный статус: ${statusCode}`);
-    }
-
-    const sessionId = data.session_id;
-    if (!sessionId) {
-        throw new Error('В ответе нет session_id');
-    }
-
-    let pollInterval = data.poll_interval_ms || 500;
-
-    // 2. Цикл опроса
-    while (true) {
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-
-        // Отправляем GET-запрос с сессией (или POST, но в HAR видно, что статус можно получить через GET)
-        // На основе HAR, вероятно, используется GET /api/generation/status?session_id=...
-        // Попробуем оба варианта: сначала GET, если не работает — POST.
-        let statusResponse;
-        try {
-            // Вариант 1: GET
-            statusResponse = await axios.get(`${baseUrl}/status`, {
-                params: { session_id: sessionId },
-                headers: { 'Authorization': `OAuth ${token}` },
-                timeout: 30000
-            });
-        } catch (e) {
-            // Вариант 2: POST с session_id (как в вашем Python-скрипте)
-            statusResponse = await axios.post(baseUrl, {
-                session_id: sessionId
-            }, {
-                headers: {
-                    'Authorization': `OAuth ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 30000
-            });
-        }
-
-        const statusData = statusResponse.data;
-        const newStatusCode = statusData.status_code;
-
-        if (newStatusCode === 2) {
-            return statusData; // успех
-        }
-        if (newStatusCode === 3) {
-            throw new Error(`Ошибка генерации: ${JSON.stringify(statusData)}`);
-        }
-
-        // Обновляем интервал, если сервер прислал новый
-        if (statusData.poll_interval_ms) {
-            pollInterval = statusData.poll_interval_ms;
-        }
-    }
-}
-
-function formatTestResult(name, data) {
-    const title = data.title || 'Без заголовка';
-    const theses = data.thesis || [];
-    const chapters = data.chapters || [];
-    const sharingUrl = data.sharing_url || '';
-
-    let message = `*${name}*\n`;
-    message += `📌 *Заголовок:* ${title}\n`;
-
-    if (theses.length > 0) {
-        message += `📝 *Тезисы:*\n`;
-        theses.forEach((item, i) => {
-            const content = item.content || item;
-            message += `   ${i+1}. ${content}\n`;
-        });
-    } else if (chapters.length > 0) {
-        message += `📝 *Главы:*\n`;
-        chapters.forEach((chapter, i) => {
-            message += `   ${i+1}. ${chapter.title || 'Раздел'}\n`;
-            if (chapter.content) {
-                message += `      ${chapter.content}\n`;
-            }
-        });
-    } else {
-        message += `📝 *Содержание:* отсутствует\n`;
-    }
-
-    if (sharingUrl) {
-        message += `🔗 *Ссылка для шеринга:* ${sharingUrl}\n`;
-    }
-
-    return message;
-}
-
-
-
-
 
 function log(message, level = 'info', diagnosticMode = false) {
     tgUtils.logMessage(adminChatId, bot, message, level, diagnosticMode || state.DIAGNOSTIC_MODE);
@@ -189,38 +64,24 @@ app.post('/webhook', async (req, res) => {
             }
 
 
-// === КОМАНДА /test ===
-if (text.startsWith('/test')) {
-    await bot.sendMessage(adminChatId, '⏳ Запускаю тест API 300.ya.ru...');
-
-    const token = state.YANDEX_TOKEN || process.env.YANDEX_TOKEN;
-    if (!token) {
-        await bot.sendMessage(adminChatId, '❌ YANDEX_TOKEN не задан.');
+if (text.startsWith('/new')) {
+    const hookId = state.DEPLOY_HOOK_ID;
+    if (!hookId) {
+        await bot.sendMessage(adminChatId, '❌ Deploy Hook ID не задан в конфиге.');
         return;
     }
-
-    const testUrl = 'https://habr.com/ru/news/729422/';
-
+    const hookUrl = `https://api.render.com/deploy/${hookId}`;
     try {
-        // Обычный режим
-        await bot.sendMessage(adminChatId, '🔄 Обычный пересказ...');
-        const normalResult = await pollYandexSummary(testUrl, token);
-        const normalMsg = formatTestResult('ОБЫЧНЫЙ ПЕРЕСКАЗ', normalResult);
-        await bot.sendMessage(adminChatId, normalMsg, { parse_mode: 'Markdown' });
-
-        // Нейро-режим (если поддерживается)
-        await bot.sendMessage(adminChatId, '🔄 Нейро-пересказ...');
-        const neuroResult = await pollYandexSummary(testUrl, token, true);
-        const neuroMsg = formatTestResult('НЕЙРО-ПЕРЕСКАЗ', neuroResult);
-        await bot.sendMessage(adminChatId, neuroMsg, { parse_mode: 'Markdown' });
-
-        await bot.sendMessage(adminChatId, '✅ Тест завершён.');
-    } catch (error) {
-        await bot.sendMessage(adminChatId, `❌ Ошибка: ${error.message}`);
-        // Дополнительная диагностика
-        if (error.response) {
-            await bot.sendMessage(adminChatId, `📄 Статус: ${error.response.status}\n📄 Ответ: ${JSON.stringify(error.response.data, null, 2)}`);
+        const response = await axios.post(hookUrl);
+        if (response.status === 200 || response.status === 204) {
+            await bot.sendMessage(adminChatId, '✅ Деплой запущен! Ожидайте обновления.');
+            log(`Запущен деплой через hook: ${hookUrl}`, 'info');
+        } else {
+            await bot.sendMessage(adminChatId, `⚠️ Деплой вернул статус ${response.status}`);
         }
+    } catch (e) {
+        await bot.sendMessage(adminChatId, `❌ Ошибка при запуске деплоя: ${e.message}`);
+        log(`Ошибка деплоя: ${e.message}`, 'error');
     }
     return;
 }
