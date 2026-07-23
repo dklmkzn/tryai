@@ -17,6 +17,8 @@ const state = {
     MAX_LONG_ATTEMPTS: 20,
     PING_MIN_INTERVAL: 10 * 60 * 1000,
     PING_MAX_INTERVAL: 13 * 60 * 1000,
+    DEPLOY_HOOK_URL: '',
+    COOKIES: '',
 
     // ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ЛОГИРОВАНИЯ =====
     safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
@@ -77,8 +79,8 @@ const state = {
     },
 
     applyConfig(arr) {
-        if (!Array.isArray(arr) || arr.length !== 14) {
-            throw new Error('Массив должен содержать ровно 14 элементов');
+        if (!Array.isArray(arr) || arr.length !== 16) {
+            throw new Error('Массив должен содержать ровно 16 элементов');
         }
         this.allowedDomains = arr[0] || [];
         this.allowedUsernames = arr[1] || [];
@@ -94,6 +96,8 @@ const state = {
         this.MAX_LONG_ATTEMPTS = typeof arr[11] === 'number' ? arr[11] : 20;
         this.PING_MIN_INTERVAL = typeof arr[12] === 'number' ? arr[12] : 10 * 60 * 1000;
         this.PING_MAX_INTERVAL = typeof arr[13] === 'number' ? arr[13] : 13 * 60 * 1000;
+        this.DEPLOY_HOOK_URL = arr[14] || '';
+        this.COOKIES = arr[15] || '';
     },
 
     async loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMode = false) {
