@@ -51,32 +51,45 @@ app.post('/webhook', async (req, res) => {
             // === КОМАНДЫ АДМИНИСТРАТОРА ===
 
             // /reload — вывести текущий конфиг (расшифрованный)
-            if (text.startsWith('/reload')) {
-                const configArray = [
-                    state.allowedDomains,
-                    state.allowedUsernames,
-                    state.allowedChannels,
-                    state.allowedGroups,
-                    state.allowedChannelsNoDomainCheck,
-                    state.allowedGroupsNoDomainCheck,
-                    state.YANDEX_TOKEN,
-                    state.DIAGNOSTIC_MODE,
-                    state.ACTIVE_INTERVAL,
-                    state.MAX_ACTIVE_ATTEMPTS,
-                    state.LONG_INTERVAL,
-                    state.MAX_LONG_ATTEMPTS,
-                    state.PING_MIN_INTERVAL,
-                    state.PING_MAX_INTERVAL,
-                    state.DEPLOY_HOOK_URL || '',
-                    state.COOKIES
-                ];
-                await bot.sendMessage(adminChatId,
-                    `📋 Текущий конфиг (расшифрованный):\n\`\`\`json\n${JSON.stringify(configArray, null, 2)}\n\`\`\``,
-                    { parse_mode: 'Markdown' }
-                );
-                return;
-            }
+if (text.startsWith('/reload')) {
+    try {
+        // 1. Загружаем конфиг из закреплённого сообщения
+        const loaded = await state.loadConfigFromPinned(adminChatId, bot, log, state.DIAGNOSTIC_MODE);
+        if (loaded) {
+            yandex.setYandexToken(state.YANDEX_TOKEN);
+            await bot.sendMessage(adminChatId, '✅ Конфиг перезагружен из закреплённого сообщения.');
+        } else {
+            await bot.sendMessage(adminChatId, '❌ Не удалось загрузить конфиг из закреплённого сообщения.');
+        }
 
+        // 2. Показываем текущий расшифрованный конфиг
+        const configArray = [
+            state.allowedDomains,
+            state.allowedUsernames,
+            state.allowedChannels,
+            state.allowedGroups,
+            state.allowedChannelsNoDomainCheck,
+            state.allowedGroupsNoDomainCheck,
+            state.YANDEX_TOKEN,
+            state.DIAGNOSTIC_MODE,
+            state.ACTIVE_INTERVAL,
+            state.MAX_ACTIVE_ATTEMPTS,
+            state.LONG_INTERVAL,
+            state.MAX_LONG_ATTEMPTS,
+            state.PING_MIN_INTERVAL,
+            state.PING_MAX_INTERVAL,
+            state.DEPLOY_HOOK_URL || '',
+            state.COOKIES
+        ];
+        await bot.sendMessage(adminChatId,
+            `📋 Текущий конфиг (расшифрованный):\n\`\`\`json\n${JSON.stringify(configArray, null, 2)}\n\`\`\``,
+            { parse_mode: 'Markdown' }
+        );
+    } catch (e) {
+        await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}`);
+    }
+    return;
+}
             // /diag — включить диагностику
             if (text.startsWith('/diag')) {
                 state.DIAGNOSTIC_MODE = true;
@@ -103,19 +116,6 @@ if (text.includes('[[')) {
     }
     return;
 }
-
-            // /reload (старый) — перезагрузка из закреплённого сообщения
-            if (text.startsWith('/reloadold')) {
-                const loaded = await state.loadConfigFromPinned(adminChatId, bot, log, state.DIAGNOSTIC_MODE);
-                if (loaded) {
-                    yandex.setYandexToken(state.YANDEX_TOKEN);
-                    await bot.sendMessage(adminChatId, '✅ Конфиг перезагружен из закреплённого сообщения.');
-                } else {
-                    await bot.sendMessage(adminChatId, '❌ Не удалось загрузить конфиг.');
-                }
-                return;
-            }
-
             // /unpin — удалить закреплённое сообщение
             if (text.startsWith('/unpin')) {
                 try {
