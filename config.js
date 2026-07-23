@@ -1,8 +1,7 @@
-// config.js — версия 1.1.9
+// config.js — версия 1.1.14
 // Состояние и методы бота в едином объекте state.
 
 const state = {
-    // ===== ПОЛЯ =====
     allowedDomains: ['nplus1.ru', 'naked-science.ru', '300.ya.ru'],
     allowedUsernames: [],
     allowedChannels: [],
@@ -10,14 +9,14 @@ const state = {
     allowedChannelsNoDomainCheck: [],
     allowedGroupsNoDomainCheck: [],
     YANDEX_TOKEN: '',
-    DIAGNOSTIC_MODE: true,
+    DIAGNOSTIC_MODE: false,
     ACTIVE_INTERVAL: 3000,
     MAX_ACTIVE_ATTEMPTS: 100,
     LONG_INTERVAL: 60000,
     MAX_LONG_ATTEMPTS: 20,
     PING_MIN_INTERVAL: 10 * 60 * 1000,
     PING_MAX_INTERVAL: 13 * 60 * 1000,
-    DEPLOY_HOOK_ID: '',
+    DEPLOY_HOOK_URL: '',
     COOKIES: '',
 
     // ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ЛОГИРОВАНИЯ =====
@@ -96,7 +95,7 @@ const state = {
         this.MAX_LONG_ATTEMPTS = typeof arr[11] === 'number' ? arr[11] : 20;
         this.PING_MIN_INTERVAL = typeof arr[12] === 'number' ? arr[12] : 10 * 60 * 1000;
         this.PING_MAX_INTERVAL = typeof arr[13] === 'number' ? arr[13] : 13 * 60 * 1000;
-        this.DEPLOY_HOOK_ID = arr[14] || '';
+        this.DEPLOY_HOOK_URL = arr[14] || '';
         this.COOKIES = arr[15] || '';
     },
 
@@ -122,7 +121,7 @@ const state = {
                 }
                 return false;
             }
-            this.safeLog(adminChatId, bot, `loadConfigFromPinned: текст закреплённого сообщения получен: ${pinned.text}`, 'info', diagnosticMode, logFn);
+            this.safeLog(adminChatId, bot, `loadConfigFromPinned: текст закреплённого сообщения получен, длина = ${pinned.text.length}`, 'info', diagnosticMode, logFn);
             const arr = this.extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
             if (arr) {
                 this.applyConfig(arr);
