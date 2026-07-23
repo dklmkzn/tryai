@@ -31,10 +31,10 @@ function log(message, level = 'info', diagnosticMode = false) {
 // ===== ВЫВОД ВЕРСИЙ В ЛИЧКУ (если диагностика включена) =====
 function logVersions() {
     const versions = {
-        'config.js': state.VERSION || '1.1.16',
+        'config.js': state.VERSION || '0.0.0',
         'index.js': VERSION,
-        'yandex-utils.js': yandex.VERSION || '1.1.25',
-        'telegram-utils.js': tgUtils.VERSION || '1.1.16'
+        'yandex-utils.js': yandex.VERSION || '0.0.0',
+        'telegram-utils.js': tgUtils.VERSION || '0.0.0'
     };
     const msg = `📋 Версии модулей:\n${Object.entries(versions).map(([k, v]) => `${k}: ${v}`).join('\n')}`;
     log(msg, 'info');
