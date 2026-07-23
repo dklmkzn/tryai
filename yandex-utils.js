@@ -98,18 +98,58 @@ async function getSummaryViaApi(articleUrl, cookieString, logFn = null, adminCha
 }
 
 // ===== ФОРМАТИРОВАНИЕ РЕЗУЛЬТАТА API (только тезисы, без лишних тегов) =====
-function formatSummaryFromApi(data) {
+function formatSummaryFromApi(data, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
     let parts = [];
-    // Заголовок не добавляем — он будет передан отдельно в formatNews
+
+    // ===== ДИАГНОСТИКА: что приходит в ответе =====
+    const keys = Object.keys(data);
+    const diagMsg = `📦 Ключи ответа API: ${keys.join(', ')}`;
+    safeLog(adminChatId, bot, diagMsg, 'info', diagnosticMode, logFn);
+
+    if (data.thesis) {
+        const thesisCount = data.thesis.length;
+        const firstThesis = data.thesis[0]?.content || 'нет контента';
+        safeLog(adminChatId, bot, `📊 Тезисы: количество=${thesisCount}, первый тезис: ${firstThesis.substring(0, 100)}`, 'info', diagnosticMode, logFn);
+    } else {
+        safeLog(adminChatId, bot, '⚠️ Поле "thesis" отсутствует в ответе', 'warn', diagnosticMode, logFn);
+    }
+
+    if (data.chapters) {
+        const chaptersCount = data.chapters.length;
+        const firstChapter = data.chapters[0]?.content || 'нет контента';
+        safeLog(adminChatId, bot, `📖 Главы: количество=${chaptersCount}, первая глава: ${firstChapter.substring(0, 100)}`, 'info', diagnosticMode, logFn);
+        // Выводим тезисы из первой главы для сравнения
+        const firstChapterTheses = data.chapters[0]?.theses || [];
+        if (firstChapterTheses.length) {
+            const firstThesisFromChapter = firstChapterTheses[0]?.content || '';
+            safeLog(adminChatId, bot, `🔹 Тезисы из первой главы: ${firstThesisFromChapter.substring(0, 100)}`, 'info', diagnosticMode, logFn);
+        }
+    } else {
+        safeLog(adminChatId, bot, '⚠️ Поле "chapters" отсутствует в ответе', 'warn', diagnosticMode, logFn);
+    }
+    // ===============================================
+
+    // Формируем тезисы (если есть)
     if (data.thesis && data.thesis.length) {
-        // Убираем подпись «Подробные тезисы»
         data.thesis.forEach((t) => {
             parts.push(`• ${escapeHtml(t.content)}`);
         });
+    } else if (data.chapters && data.chapters.length) {
+        // Если thesis нет, используем тезисы из глав (но это не должно происходить)
+        safeLog(adminChatId, bot, '⚠️ Используем тезисы из глав (fallback)', 'warn', diagnosticMode, logFn);
+        data.chapters.forEach((ch) => {
+            if (ch.theses && ch.theses.length) {
+                ch.theses.forEach((t) => {
+                    parts.push(`• ${escapeHtml(t.content)}`);
+                });
+            }
+        });
     }
-    // if (data.sharing_url) {
-    //     parts.push(`<a href="${escapeHtml(data.sharing_url)}">Открыть пересказ на 300.ya.ru</a>`);
-    // }
+
+    if (data.sharing_url) {
+        parts.push(`<a href="${escapeHtml(data.sharing_url)}">Открыть пересказ на 300.ya.ru</a>`);
+    }
+
     return parts.join('\n');
 }
 
@@ -120,7 +160,7 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
             const apiResult = await getSummaryViaApi(url, cookieString, logFn, adminChatId, bot, diagnosticMode);
             if (apiResult.status === 'success') {
                 const data = apiResult.data;
-                const content = formatSummaryFromApi(data);
+                const content = formatSummaryFromApi(data, logFn, adminChatId, bot, diagnosticMode);
                 safeLog(adminChatId, bot, '✅ Контент получен через API (только тезисы)', 'info', diagnosticMode, logFn);
                 return {
                     status: 200,
