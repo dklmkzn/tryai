@@ -31,6 +31,7 @@ function escapeHtml(text) {
 
 // ===== API-МЕТОД С КУКАМИ =====
 async function getSummaryViaApi(articleUrl, cookieString, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
+safeLog(adminChatId, bot, `⚠️⚠️ ${diagnosticMode}⚠️⚠️`, 'info', true, logFn);
     const BASE_URL = 'https://300.ya.ru/api';
     const session = axios.create({
         headers: {
@@ -59,7 +60,7 @@ async function getSummaryViaApi(articleUrl, cookieString, logFn = null, adminCha
         const startPayload = { article_url: articleUrl, type: 'article', ignore_cache: false };
         const startResp = await session.post(`${BASE_URL}/generation`, startPayload);
         const startData = startResp.data;
-
+safeLog(adminChatId, bot, `⚠️ ${diagnosticMode}⚠️`, 'info', true, logFn);
         const statusCode = startData.status_code;
         if (statusCode === 2) {
             return { status: 'success', data: startData };
