@@ -1,7 +1,8 @@
-// config.js — версия 1.1.27
-// Состояние и методы бота, обфускация данных в закреплённом сообщении.
+// config.js — версия 1.1.28
+// Состояние и методы бота.
+// Кодирование/декодирование закреплённого сообщения: весь JSON → Base64.
 
-const VERSION = '1.1.27';
+const VERSION = '1.1.28';
 
 const state = {
     VERSION,
@@ -22,37 +23,13 @@ const state = {
     DEPLOY_HOOK_URL: '',
     COOKIES: '',
 
-    // ===== ОБФУСКАЦИЯ =====
-    encodeConfig(arr) {
-        if (!Array.isArray(arr)) return arr;
-        return arr.map(item => {
-            if (Array.isArray(item)) return this.encodeConfig(item);
-            if (typeof item === 'string') return this.encodeString(item);
-            return item;
-        });
-    },
-    decodeConfig(arr) {
-        if (!Array.isArray(arr)) return arr;
-        return arr.map(item => {
-            if (Array.isArray(item)) return this.decodeConfig(item);
-            if (typeof item === 'string') return this.decodeString(item);
-            return item;
-        });
-    },
-    encodeString(str) {
-        if (!str) return '';
-        let encoded = str.replace(/\d/g, d => 9 - parseInt(d));
-        encoded = Buffer.from(encoded, 'utf8').toString('base64');
-        return encoded;
-    },
-    decodeString(str) {
-        if (!str) return '';
-        let decoded = Buffer.from(str, 'base64').toString('utf8');
-        decoded = decoded.replace(/\d/g, d => 9 - parseInt(d));
-        return decoded;
-    },
+    // ===== ОБФУСКАЦИЯ (устаревшие методы, оставлены для совместимости, но не используются) =====
+    encodeConfig(arr) { return arr; },
+    decodeConfig(arr) { return arr; },
+    encodeString(str) { return str; },
+    decodeString(str) { return str; },
 
-    // ===== ЛОГИРОВАНИЕ (критические ошибки через logFn, остальное по флагу) =====
+    // ===== ЛОГИРОВАНИЕ =====
     safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
         if (logFn) {
             logFn(message, level, diagnosticMode);
@@ -70,6 +47,7 @@ const state = {
         return str;
     },
 
+    // Извлечение массива из текста (для команд от админа, без кодирования)
     extractConfig(text, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
         if (!text) {
             this.safeLog(adminChatId, bot, 'extractConfig: текст пуст', 'warn', diagnosticMode, logFn);
@@ -100,7 +78,7 @@ const state = {
             const arr = JSON.parse(inner);
             if (Array.isArray(arr) && arr.length === 16) {
                 this.safeLog(adminChatId, bot, `extractConfig: успешно извлечён массив из ${arr.length} элементов`, 'info', diagnosticMode, logFn);
-                return arr; // возвращаем как есть (закодированный)
+                return arr;
             } else {
                 this.safeLog(adminChatId, bot, `extractConfig: массив имеет длину ${arr.length}, ожидается 16`, 'warn', diagnosticMode, logFn);
                 return null;
@@ -134,6 +112,7 @@ const state = {
         this.COOKIES = arr[15] || '';
     },
 
+    // Загрузка из закреплённого сообщения (декодируем Base64 → JSON → массив)
     async loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMode = false) {
         if (!adminChatId) {
             this.safeLog(adminChatId, bot, 'loadConfigFromPinned: adminChatId не задан', 'warn', diagnosticMode, logFn);
@@ -150,28 +129,21 @@ const state = {
                 this.safeLog(adminChatId, bot, 'loadConfigFromPinned: закреплённое сообщение не содержит текст', 'warn', diagnosticMode, logFn);
                 return false;
             }
-            const arr = this.extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
-
-           
-            if (arr) {
-                // Декодируем массив
-                const decodedArr = this.decodeConfig(arr);
-
-
-// ===== ОТЛАДОЧНАЯ ПЕЧАТЬ =====
-try {
-    await bot.sendMessage(adminChatId, `📋 Декодированный массив:\n\`\`\`json\n${JSON.stringify(decodedArr, null, 2)}\n\`\`\``, { parse_mode: 'Markdown' });
-} catch (e) {
-    console.error('Не удалось отправить отладку:', e.message);
-}
-// ============================
-
-                
-                this.applyConfig(decodedArr);
-                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: конфиг успешно применён (декодирован)', 'info', diagnosticMode, logFn);
+            const match = pinned.text.match(/\[\[\[\s*([\s\S]*?)\s*\]\]\]/);
+            if (!match) {
+                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: не найден маркер [[[', 'warn', diagnosticMode, logFn);
+                return false;
+            }
+            const encoded = match[1].trim();
+            // Декодируем Base64
+            const jsonString = Buffer.from(encoded, 'base64').toString('utf8');
+            const arr = JSON.parse(jsonString);
+            if (Array.isArray(arr) && arr.length === 16) {
+                this.applyConfig(arr);
+                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: конфиг успешно применён (декодирован из JSON)', 'info', diagnosticMode, logFn);
                 return true;
             } else {
-                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: не удалось извлечь массив', 'error', diagnosticMode, logFn);
+                this.safeLog(adminChatId, bot, `loadConfigFromPinned: массив имеет длину ${arr.length}, ожидается 16`, 'warn', diagnosticMode, logFn);
                 return false;
             }
         } catch (e) {
@@ -180,6 +152,7 @@ try {
         }
     },
 
+    // Сохранение в закреплённое сообщение (JSON → Base64)
     async updatePinnedConfig(adminChatId, bot, arr, logFn = null, diagnosticMode = false) {
         if (!adminChatId) return false;
         try {
@@ -194,12 +167,14 @@ try {
                     this.safeLog(adminChatId, bot, `Не удалось удалить старое: ${e.message}`, 'warn', diagnosticMode, logFn);
                 }
             }
-            // Кодируем массив перед сохранением
-            const encodedArr = this.encodeConfig(arr);
-            const text = `[[[\n${JSON.stringify(encodedArr)}\n]]]`;
+            // 1. Превращаем массив в JSON-строку
+            const jsonString = JSON.stringify(arr);
+            // 2. Кодируем в Base64
+            const encoded = Buffer.from(jsonString, 'utf8').toString('base64');
+            const text = `[[[\n${encoded}\n]]]`;
             const sent = await bot.sendMessage(adminChatId, text);
             await bot.pinChatMessage(adminChatId, sent.message_id);
-            this.safeLog(adminChatId, bot, 'Новое закреплённое сообщение установлено (закодировано)', 'info', diagnosticMode, logFn);
+            this.safeLog(adminChatId, bot, 'Новое закреплённое сообщение установлено (закодирован JSON)', 'info', diagnosticMode, logFn);
             return true;
         } catch (e) {
             this.safeLog(adminChatId, bot, `Ошибка в updatePinnedConfig: ${e.message}`, 'error', diagnosticMode, logFn);
