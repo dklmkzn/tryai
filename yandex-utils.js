@@ -107,9 +107,9 @@ function formatSummaryFromApi(data) {
             parts.push(`• ${escapeHtml(t.content)}`);
         });
     }
-    if (data.sharing_url) {
-        parts.push(`<a href="${escapeHtml(data.sharing_url)}">Открыть пересказ на 300.ya.ru</a>`);
-    }
+    // if (data.sharing_url) {
+    //     parts.push(`<a href="${escapeHtml(data.sharing_url)}">Открыть пересказ на 300.ya.ru</a>`);
+    // }
     return parts.join('\n');
 }
 
