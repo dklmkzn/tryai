@@ -152,6 +152,12 @@ const state = {
             }
             const arr = this.extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
 
+           
+            if (arr) {
+                // Декодируем массив
+                const decodedArr = this.decodeConfig(arr);
+
+
 // ===== ОТЛАДОЧНАЯ ПЕЧАТЬ =====
 try {
     await bot.sendMessage(adminChatId, `📋 Декодированный массив:\n\`\`\`json\n${JSON.stringify(decodedArr, null, 2)}\n\`\`\``, { parse_mode: 'Markdown' });
@@ -159,10 +165,8 @@ try {
     console.error('Не удалось отправить отладку:', e.message);
 }
 // ============================
-            
-            if (arr) {
-                // Декодируем массив
-                const decodedArr = this.decodeConfig(arr);
+
+                
                 this.applyConfig(decodedArr);
                 this.safeLog(adminChatId, bot, 'loadConfigFromPinned: конфиг успешно применён (декодирован)', 'info', diagnosticMode, logFn);
                 return true;
