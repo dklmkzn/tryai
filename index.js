@@ -247,14 +247,15 @@ app.get('/process', async (req, res) => {
                 parse_mode: 'HTML',
                 reply_markup: keyboard
             });
+log(parts[0], 'info');
             if (parts.length > 1) {
-                for (let i = 1; i < parts.length; i++) {
+                for (let i = 1; i < parts.length; i++) { 
+log(parts[i], 'info');
                     await new Promise(resolve => setTimeout(resolve, 500));
                     await bot.sendMessage(chatId, parts[i], {
                         parse_mode: 'HTML',
                         reply_markup: keyboard
                     });
-                    log(parts[i], 'info');
                 }
             }
             if (content.origin) {
