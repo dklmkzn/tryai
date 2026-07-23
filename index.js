@@ -241,15 +241,17 @@ app.get('/process', async (req, res) => {
                     [{ text: 'Открыть пересказ на 300.ya.ru', url: shortUrl }]
                 ]
             };
+log(parts[0], 'info');       
+await log(parts[0], 'info');                  
             await bot.editMessageText(parts[0], {
                 chat_id: chatId,
                 message_id: parseInt(messageId),
                 parse_mode: 'HTML',
                 reply_markup: keyboard
             });
-log(parts[0], 'info');
             if (parts.length > 1) {
                 for (let i = 1; i < parts.length; i++) { 
+await log(parts[i], 'info');                    
 log(parts[i], 'info');
                     await new Promise(resolve => setTimeout(resolve, 500));
                     await bot.sendMessage(chatId, parts[i], {
