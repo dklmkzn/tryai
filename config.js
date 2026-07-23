@@ -132,38 +132,38 @@ const state = {
         this.COOKIES = arr[15] || '';
     },
 
-    async loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMode = false) {
-        if (!adminChatId) {
-            this.safeLog(adminChatId, bot, 'loadConfigFromPinned: adminChatId не задан', 'warn', diagnosticMode, logFn);
+async loadConfigFromPinned(adminChatId, bot, logFn = null, diagnosticMode = false) {
+    if (!adminChatId) {
+        this.safeLog(adminChatId, bot, 'loadConfigFromPinned: adminChatId не задан', 'warn', diagnosticMode, logFn);
+        return false;
+    }
+    try {
+        const chat = await bot.getChat(adminChatId);
+        const pinned = chat.pinned_message;
+        if (!pinned) {
+            this.safeLog(adminChatId, bot, 'loadConfigFromPinned: закреплённое сообщение отсутствует', 'info', diagnosticMode, logFn);
             return false;
         }
-        try {
-            const chat = await bot.getChat(adminChatId);
-            const pinned = chat.pinned_message;
-            if (!pinned) {
-                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: закреплённое сообщение отсутствует', 'info', diagnosticMode, logFn);
-                return false;
-            }
-            if (!pinned.text) {
-                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: закреплённое сообщение не содержит текст', 'warn', diagnosticMode, logFn);
-                return false;
-            }
-            this.safeLog(adminChatId, bot, `loadConfigFromPinned: текст получен, длина ${pinned.text.length}`, 'info', diagnosticMode, logFn);
-            const arr = this.extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
-            if (arr) {
-                // Применяем массив напрямую (он уже декодирован)
-                this.applyConfig(arr);
-                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: конфиг успешно применён', 'info', diagnosticMode, logFn);
-                return true;
-            } else {
-                this.safeLog(adminChatId, bot, 'loadConfigFromPinned: не удалось извлечь массив', 'error', diagnosticMode, logFn);
-                return false;
-            }
-        } catch (e) {
-            this.safeLog(adminChatId, bot, `loadConfigFromPinned: ошибка: ${e.message}`, 'error', diagnosticMode, logFn);
+        if (!pinned.text) {
+            this.safeLog(adminChatId, bot, 'loadConfigFromPinned: закреплённое сообщение не содержит текст', 'warn', diagnosticMode, logFn);
             return false;
         }
-    },
+        const arr = this.extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
+        if (arr) {
+            // Декодируем массив
+            const decodedArr = this.decodeConfig(arr);
+            this.applyConfig(decodedArr);
+            this.safeLog(adminChatId, bot, 'loadConfigFromPinned: конфиг успешно применён (декодирован)', 'info', diagnosticMode, logFn);
+            return true;
+        } else {
+            this.safeLog(adminChatId, bot, 'loadConfigFromPinned: не удалось извлечь массив', 'error', diagnosticMode, logFn);
+            return false;
+        }
+    } catch (e) {
+        this.safeLog(adminChatId, bot, `loadConfigFromPinned: ошибка: ${e.message}`, 'error', diagnosticMode, logFn);
+        return false;
+    }
+}
 
     async updatePinnedConfig(adminChatId, bot, arr, logFn = null, diagnosticMode = false) {
         if (!adminChatId) return false;
