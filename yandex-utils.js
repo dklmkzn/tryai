@@ -87,25 +87,21 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
         const originLink = $('a').filter((i, el) => $(el).text().includes('Перейти на оригинал')).attr('href') || '';
         const fullText = $('body').text();
 
-        // Проверка на нестабильность
-        const isUnstableGeneral = (
+        // === ПРОВЕРКА НА НЕСТАБИЛЬНОСТЬ (только явные технические маркеры) ===
+        const isUnstable = (
             fullText.includes('__sveltekit_') ||
             fullText.includes('mc.yandex.ru') ||
-            fullText.includes('Краткий пересказ ... доступен только пользователям Яндекс Браузера') ||
-            fullText.includes('Authorization: OAuth <token>') ||
-            fullText.includes('import requests') ||
-            fullText.includes('Пользовательское соглашение') ||
-            fullText.includes('Как использовать API')
+            fullText.includes('Краткий пересказ ... доступен только пользователям Яндекс Браузера')
         );
 
-        if (isUnstableGeneral) {
-            safeLog(adminChatId, bot, `Страница ещё не стабилизирована (обнаружен мусор). Первые 200 символов: ${fullText.substring(0, 200)}`, 'info', diagnosticMode, logFn);
+        // Если маркеры есть И текст короткий (< 500 символов) — считаем нестабильным
+        if (isUnstable && fullText.length < 500) {
+            safeLog(adminChatId, bot, `Страница ещё не стабилизирована (маркеры + короткий текст, длина ${fullText.length})`, 'info', diagnosticMode, logFn);
             return { status: 202, title: '', content: '', origin: '' };
         }
 
-        // Диагностика стабильной страницы
-        const diagMsg = `📄 Получена стабильная страница ${url}, первые 500 символов:\n${fullText.substring(0, 500)}`;
-        safeLog(adminChatId, bot, diagMsg, 'info', diagnosticMode, logFn);
+        // Если длина >= 500 или маркеров нет — считаем стабильной
+        safeLog(adminChatId, bot, `📄 Получена стабильная страница ${url}, длина ${fullText.length}`, 'info', diagnosticMode, logFn);
 
         const { title, content } = parseContent(fullText);
         return { status: 200, title, content, origin: originLink };
