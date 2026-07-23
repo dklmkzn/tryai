@@ -1,5 +1,5 @@
-// config.js — версия 1.1.14
-// Состояние и методы бота в едином объекте state.
+// config.js — версия 1.1.16
+const VERSION = '1.1.16';
 
 const state = {
     allowedDomains: ['nplus1.ru', 'naked-science.ru', '300.ya.ru'],
