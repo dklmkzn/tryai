@@ -1,4 +1,4 @@
-// index.js — версия 1.1.26
+// index.js — версия 1.1.2 6
 // Точка входа: Express, вебхук, обработка команд, диагностика, деплой.
 
 const express = require('express');
