@@ -264,7 +264,7 @@ function formatNews(title, content) {
     const BUTTON_TOTAL_LENGTH = BUTTON_TEXT.length + BUTTON_URL_LENGTH + 10;
     const MAX_MESSAGE_LENGTH = 4096 - BUTTON_TOTAL_LENGTH - 30;
 
-    const fullTitle = safeTitle ? `${safeTitle}\nПересказ YandexGPT на 300.ya.ru` : 'Пересказ YandexGPT на 300.ya.ru';
+    const fullTitle = safeTitle ? `${safeTitle}\nПересказ на 300.ya.ru` : 'Пересказ на 300.ya.ru';
     const formattedTitle = safeTitle ? `<b>${safeTitle}</b>` : '';
     const fullText = formattedTitle + (safeContent ? `\n<blockquote>\n<b>Пересказ YandexGPT на 300.ya.ru</b>\n\n${safeContent}</blockquote>` : '');
 
