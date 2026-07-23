@@ -1,4 +1,4 @@
-// index.js — версия 1.1.14
+// index.js — версия 1.1.15
 const express = require('express');
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
@@ -98,11 +98,12 @@ app.post('/webhook', async (req, res) => {
 
             // /new — запуск деплоя
             if (text.startsWith('/new')) {
-                const hookUrl = state.DEPLOY_HOOK_URL;
-                if (!hookUrl) {
-                    await bot.sendMessage(adminChatId, '❌ Deploy Hook URL не задан в конфиге.');
+                const hookId = state.DEPLOY_HOOK_ID;
+                if (!hookId) {
+                    await bot.sendMessage(adminChatId, '❌ Deploy Hook ID не задан в конфиге.');
                     return;
                 }
+                const hookUrl = `https://api.render.com/deploy/${hookId}`;
                 try {
                     const response = await axios.post(hookUrl);
                     if (response.status === 200 || response.status === 204) {
