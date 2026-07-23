@@ -2,6 +2,7 @@
 const VERSION = '1.1.25';
 
 const state = {
+    VERSION,
     allowedDomains: ['nplus1.ru', 'naked-science.ru', '300.ya.ru'],
     allowedUsernames: [],
     allowedChannels: [],
