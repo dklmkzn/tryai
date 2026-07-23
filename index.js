@@ -1,5 +1,6 @@
-// index.js — версия 1.1.24
-const VERSION = '1.1.25';
+// index.js — версия 1.1.26
+// Точка входа: Express, вебхук, обработка команд, диагностика, деплой.
+
 const express = require('express');
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
@@ -20,24 +21,11 @@ const tasks = new Map();
 let adminChatId = null;
 const greetedUsers = new Map();
 
-// Устанавливаем токен из состояния (если есть)
 yandex.setYandexToken(state.YANDEX_TOKEN);
 
 // ===== ФУНКЦИЯ ЛОГИРОВАНИЯ =====
 function log(message, level = 'info', diagnosticMode = false) {
     tgUtils.logMessage(adminChatId, bot, message, level, diagnosticMode || state.DIAGNOSTIC_MODE);
-}
-
-// ===== ВЫВОД ВЕРСИЙ В ЛИЧКУ (если диагностика включена) =====
-function logVersions() {
-    const versions = {
-        'config.js': state.VERSION || '0.0.0',
-        'index.js': VERSION,
-        'yandex-utils.js': yandex.VERSION || '0.0.0',
-        'telegram-utils.js': tgUtils.VERSION || '0.0.0'
-    };
-    const msg = `📋 Версии модулей:\n${Object.entries(versions).map(([k, v]) => `${k}: ${v}`).join('\n')}`;
-    log(msg, 'info');
 }
 
 // ===== ОБРАБОТЧИК ВЕБХУКА =====
@@ -55,18 +43,59 @@ app.post('/webhook', async (req, res) => {
     const userId = message.from?.id;
     const chatIdStrNorm = state.normalizeId(chatId);
 
+    // Диагностика вебхука (управляется флагом)
+    // log(`📥 Вебхук: chatId=${chatId}, type=${chatType}, user=${username}`, 'info');
+
     if (chatType === 'private') {
         if (chatId === adminChatId) {
-            // Конфиг через [[[
+            // === КОМАНДЫ АДМИНИСТРАТОРА ===
+
+            // /reload — вывести текущий конфиг (расшифрованный)
+            if (text.startsWith('/reload')) {
+                const configArray = [
+                    state.allowedDomains,
+                    state.allowedUsernames,
+                    state.allowedChannels,
+                    state.allowedGroups,
+                    state.allowedChannelsNoDomainCheck,
+                    state.allowedGroupsNoDomainCheck,
+                    state.YANDEX_TOKEN,
+                    state.DIAGNOSTIC_MODE,
+                    state.ACTIVE_INTERVAL,
+                    state.MAX_ACTIVE_ATTEMPTS,
+                    state.LONG_INTERVAL,
+                    state.MAX_LONG_ATTEMPTS,
+                    state.PING_MIN_INTERVAL,
+                    state.PING_MAX_INTERVAL,
+                    state.DEPLOY_HOOK_URL || '',
+                    state.COOKIES
+                ];
+                await bot.sendMessage(adminChatId,
+                    `📋 Текущий конфиг (расшифрованный):\n\`\`\`json\n${JSON.stringify(configArray, null, 2)}\n\`\`\``,
+                    { parse_mode: 'Markdown' }
+                );
+                return;
+            }
+
+            // /diag — включить диагностику
+            if (text.startsWith('/diag')) {
+                state.DIAGNOSTIC_MODE = true;
+                await bot.sendMessage(adminChatId, '✅ Диагностический режим включён.');
+                log('Диагностика включена командой /diag', 'info');
+                return;
+            }
+
+            // Конфиг через [[[ (обновление с кодированием)
             if (text.includes('[[')) {
                 const arr = state.extractConfig(text, log, adminChatId, bot, state.DIAGNOSTIC_MODE);
                 if (arr) {
                     try {
-                        state.applyConfig(arr);
+                        // Декодируем полученный массив (он уже может быть закодирован)
+                        const decodedArr = state.decodeConfig(arr);
+                        state.applyConfig(decodedArr);
                         yandex.setYandexToken(state.YANDEX_TOKEN);
-                        await state.updatePinnedConfig(adminChatId, bot, arr, log, state.DIAGNOSTIC_MODE);
-                        await bot.sendMessage(adminChatId, '✅ Конфиг обновлён и закреплён.');
-                        if (state.DIAGNOSTIC_MODE) logVersions();
+                        await state.updatePinnedConfig(adminChatId, bot, decodedArr, log, state.DIAGNOSTIC_MODE);
+                        await bot.sendMessage(adminChatId, '✅ Конфиг обновлён и закреплён (закодирован).');
                     } catch (e) {
                         await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}`);
                     }
@@ -76,20 +105,19 @@ app.post('/webhook', async (req, res) => {
                 return;
             }
 
-            // /reload
-            if (text.startsWith('/reload')) {
-                const loaded = await state.loadConfigFromPinned(adminChatId, bot, log, true);
+            // /reload (старый) — перезагрузка из закреплённого сообщения
+            if (text.startsWith('/reloadold')) {
+                const loaded = await state.loadConfigFromPinned(adminChatId, bot, log, state.DIAGNOSTIC_MODE);
                 if (loaded) {
                     yandex.setYandexToken(state.YANDEX_TOKEN);
-                    await bot.sendMessage(adminChatId, '✅ Конфиг перезагружен.');
-                    if (state.DIAGNOSTIC_MODE) logVersions();
+                    await bot.sendMessage(adminChatId, '✅ Конфиг перезагружен из закреплённого сообщения.');
                 } else {
                     await bot.sendMessage(adminChatId, '❌ Не удалось загрузить конфиг.');
                 }
                 return;
             }
 
-            // /unpin
+            // /unpin — удалить закреплённое сообщение
             if (text.startsWith('/unpin')) {
                 try {
                     const chat = await bot.getChat(adminChatId);
@@ -109,12 +137,11 @@ app.post('/webhook', async (req, res) => {
 
             // /new — запуск деплоя
             if (text.startsWith('/new')) {
-                const hookId = state.DEPLOY_HOOK_ID;
-                if (!hookId) {
-                    await bot.sendMessage(adminChatId, '❌ Deploy Hook ID не задан в конфиге.');
+                const hookUrl = state.DEPLOY_HOOK_URL;
+                if (!hookUrl) {
+                    await bot.sendMessage(adminChatId, '❌ Deploy Hook URL не задан в конфиге.');
                     return;
                 }
-                const hookUrl = `https://api.render.com/deploy/${hookId}`;
                 try {
                     const response = await axios.post(hookUrl);
                     if (response.status === 200 || response.status === 204) {
@@ -145,7 +172,7 @@ app.post('/webhook', async (req, res) => {
             return;
         }
 
-        // === АДМИНИСТРАТОР ЕЩЁ НЕ НАЗНАЧЕН ===
+        // === НАЗНАЧЕНИЕ АДМИНИСТРАТОРА ===
         if (!adminChatId) {
             if (!greetedUsers.has(chatId)) {
                 greetedUsers.set(chatId, true);
@@ -158,12 +185,13 @@ app.post('/webhook', async (req, res) => {
                 const mask = maskMatch[0];
                 if (tgUtils.isUsernameMatchMask(username, mask)) {
                     adminChatId = chatId;
+                    // Сообщение о назначении — только в личку (без ID)
                     let greeting = '✅ Вы назначились администратором.';
                     try {
                         const configLoaded = await state.loadConfigFromPinned(adminChatId, bot, log, state.DIAGNOSTIC_MODE);
                         if (configLoaded) {
                             yandex.setYandexToken(state.YANDEX_TOKEN);
-                            if (state.DIAGNOSTIC_MODE) logVersions();
+                            // greeting += '\nКонфиг загружен.'; (убрано по желанию)
                         } else {
                             greeting += '\nКонфиг не найден, используются значения по умолчанию.';
                         }
@@ -174,12 +202,13 @@ app.post('/webhook', async (req, res) => {
                     await bot.sendMessage(adminChatId, greeting);
                     return;
                 } else {
-                    await bot.sendMessage(chatId, 'Здравствуйте!');
+                    log(`Маска не подходит для username ${username}`, 'info');
+                    await bot.sendMessage(chatId, '❌ Маска не подходит для вашего username. Попробуйте ещё раз.');
                     return;
                 }
             } else {
                 greetedUsers.set(chatId, true);
-                await bot.sendMessage(chatId, 'Здравствуйте!', { parse_mode: 'Markdown' });
+                await bot.sendMessage(chatId, 'Здравствуйте! Отправьте маску вида `б*б` (например, d*n).', { parse_mode: 'Markdown' });
                 return;
             }
         }
@@ -214,6 +243,7 @@ app.post('/webhook', async (req, res) => {
         }
     }
 
+    // Проверка домена
     const isDomainCheckSkipped = (isChannel && state.allowedChannelsNoDomainCheck.includes(chatIdStrNorm)) ||
                                  (isGroup && state.allowedGroupsNoDomainCheck.includes(chatIdStrNorm));
     const urlMatch = text.match(/https?:\/\/[^\s]+/);
@@ -260,13 +290,10 @@ app.post('/webhook', async (req, res) => {
 
 // ===== /process =====
 app.get('/process', async (req, res) => {
-
-    bot.sendMessage(adminChatId, `❌❌❌ ${state.DIAGNOSTIC_MODE}`);
-    
     res.sendStatus(200);
 
-    const { shortUrl, originalUrl, chatId, messageId, attempt, phase } = req.query;
-    if (!shortUrl || !chatId || !messageId || !originalUrl) {
+    const { shortUrl, chatId, messageId, attempt, phase } = req.query;
+    if (!shortUrl || !chatId || !messageId) {
         log('Недостаточно параметров в /process', 'error');
         return;
     }
@@ -275,21 +302,15 @@ app.get('/process', async (req, res) => {
     const currentPhase = phase || 'active';
 
     try {
-        // if (adminChatId) {
-        //     bot.sendMessage(adminChatId, `📝 [index.js] Вызов extractTextFromYaRu с originalUrl=${originalUrl}, shortUrl=${shortUrl}`).catch(() => {});
-        // }
-
         const content = await yandex.extractTextFromYaRu(
-            originalUrl,
             shortUrl,
             state.YANDEX_TOKEN,
             tgUtils.logMessage,
             adminChatId,
             bot,
             state.DIAGNOSTIC_MODE,
-            state.COOKIES
+            state.COOKIES   // передаём куки
         );
-
         if (content.status === 200 && content.content && content.content.length > 100) {
             const parts = yandex.formatNews(content.title, content.content);
             const keyboard = {
@@ -323,13 +344,11 @@ app.get('/process', async (req, res) => {
             }
             return;
         } else if (content.status === 202) {
+            // Страница ещё не стабилизировалась — ничего не делаем
             log('Страница ещё не стабилизирована, ожидание...', 'info');
         }
     } catch (e) {
         log(`Ошибка проверки контента: ${e.message}`, 'error');
-        if (e.message && e.message.includes('ETELEGRAM')) {
-            log(`Текст, вызвавший ошибку (первые 500): ${parts ? parts[0]?.substring(0,500) : 'нет данных'}`, 'error');
-        }
     }
 
     // Если контент не готов, планируем следующую проверку
@@ -364,7 +383,6 @@ app.get('/process', async (req, res) => {
 
     const params = {
         shortUrl,
-        originalUrl,
         chatId,
         messageId,
         attempt: nextAttempt,
@@ -386,7 +404,7 @@ app.get('/ping', (req, res) => res.sendStatus(200));
 
 app.get('/status', (req, res) => {
     res.json({
-        version: VERSION,
+        version: state.VERSION,
         uptime: process.uptime(),
         tasksCount: tasks.size,
         activeTasks: Array.from(tasks.keys()),
@@ -450,7 +468,7 @@ async function setWebhook(url) {
 }
 
 app.listen(PORT, async () => {
-    console.log(`Бот запущен, версия ${VERSION}, порт ${PORT}`);
+    console.log(`Бот запущен, версия ${state.VERSION}, порт ${PORT}`);
     const webhookUrl = `${RENDER_URL}/webhook`;
     await setWebhook(webhookUrl);
     startPingScheduler();
