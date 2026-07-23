@@ -23,78 +23,125 @@ yandex.setYandexToken(state.YANDEX_TOKEN);
 
 
 
-// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ /test =====
-
-/**
- * Опрос API 300.ya.ru до получения результата
- */
-async function testPollSummary(endpoint, payload, token, extraHeaders = {}) {
+// ===== ФУНКЦИЯ ДЛЯ /test: ОПРОС API 300.YA.RU =====
+async function pollYandexSummary(articleUrl, token) {
     const axios = require('axios');
-
-    const headers = {
-        'Authorization': `OAuth ${token}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Origin': 'https://300.ya.ru',
-        'Referer': 'https://300.ya.ru/',
-        'X-Requested-With': 'XMLHttpRequest',
-        ...extraHeaders
-    };
-
+    const baseUrl = 'https://300.ya.ru/api/generation';
+    
     // 1. Запуск генерации
-    let response = await axios.post(endpoint, payload, { headers, timeout: 30000 });
-    let data = response.data;
+    let response = await axios.post(baseUrl, {
+        article_url: articleUrl,
+        ignore_cache: false,
+        type: 'article'
+    }, {
+        headers: {
+            'Authorization': `OAuth ${token}`,
+            'Content-Type': 'application/json'
+        },
+        timeout: 30000
+    });
 
-    const status = data.status_code;
-    if (status === 'Success') return data;
-    if (status === 'Error') throw new Error(`Ошибка генерации: ${JSON.stringify(data)}`);
+    let data = response.data;
+    let statusCode = data.status_code;
+
+    // Если сразу готово (кэш)
+    if (statusCode === 2) {
+        return data;
+    }
+
+    // Ошибка
+    if (statusCode === 3) {
+        throw new Error(`Ошибка генерации: ${JSON.stringify(data)}`);
+    }
+
+    // Если статус 1 — идёт генерация
+    if (statusCode !== 1) {
+        throw new Error(`Неизвестный статус: ${statusCode}`);
+    }
 
     const sessionId = data.session_id;
-    if (!sessionId) throw new Error('В ответе нет session_id');
+    if (!sessionId) {
+        throw new Error('В ответе нет session_id');
+    }
 
-    let pollInterval = (data.poll_interval_ms || 2000) / 1000;
+    let pollInterval = data.poll_interval_ms || 500;
 
     // 2. Цикл опроса
     while (true) {
-        await new Promise(resolve => setTimeout(resolve, pollInterval * 1000));
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
 
-        const pollResponse = await axios.post(endpoint, { session_id: sessionId }, { headers, timeout: 30000 });
-        const pollData = pollResponse.data;
+        // Отправляем GET-запрос с сессией (или POST, но в HAR видно, что статус можно получить через GET)
+        // На основе HAR, вероятно, используется GET /api/generation/status?session_id=...
+        // Попробуем оба варианта: сначала GET, если не работает — POST.
+        let statusResponse;
+        try {
+            // Вариант 1: GET
+            statusResponse = await axios.get(`${baseUrl}/status`, {
+                params: { session_id: sessionId },
+                headers: { 'Authorization': `OAuth ${token}` },
+                timeout: 30000
+            });
+        } catch (e) {
+            // Вариант 2: POST с session_id (как в вашем Python-скрипте)
+            statusResponse = await axios.post(baseUrl, {
+                session_id: sessionId
+            }, {
+                headers: {
+                    'Authorization': `OAuth ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
+            });
+        }
 
-        const pollStatus = pollData.status_code;
-        if (pollStatus === 'Success') return pollData;
-        if (pollStatus === 'Error') throw new Error(`Ошибка генерации: ${JSON.stringify(pollData)}`);
+        const statusData = statusResponse.data;
+        const newStatusCode = statusData.status_code;
+
+        if (newStatusCode === 2) {
+            return statusData; // успех
+        }
+        if (newStatusCode === 3) {
+            throw new Error(`Ошибка генерации: ${JSON.stringify(statusData)}`);
+        }
 
         // Обновляем интервал, если сервер прислал новый
-        if (pollData.poll_interval_ms) {
-            pollInterval = pollData.poll_interval_ms / 1000;
+        if (statusData.poll_interval_ms) {
+            pollInterval = statusData.poll_interval_ms;
         }
     }
 }
 
-/**
- * Форматирование результата для отправки в Telegram
- */
 function formatTestResult(name, data) {
-    const title = data.title || 'нет';
-    const theses = data.thesis || data.keypoints || [];
+    const title = data.title || 'Без заголовка';
+    const theses = data.thesis || [];
+    const chapters = data.chapters || [];
     const sharingUrl = data.sharing_url || '';
 
     let message = `*${name}*\n`;
     message += `📌 *Заголовок:* ${title}\n`;
+
     if (theses.length > 0) {
         message += `📝 *Тезисы:*\n`;
         theses.forEach((item, i) => {
             const content = item.content || item;
             message += `   ${i+1}. ${content}\n`;
         });
+    } else if (chapters.length > 0) {
+        message += `📝 *Главы:*\n`;
+        chapters.forEach((chapter, i) => {
+            message += `   ${i+1}. ${chapter.title || 'Раздел'}\n`;
+            if (chapter.content) {
+                message += `      ${chapter.content}\n`;
+            }
+        });
     } else {
-        message += `📝 *Тезисы:* отсутствуют\n`;
+        message += `📝 *Содержание:* отсутствует\n`;
     }
+
     if (sharingUrl) {
-        message += `🔗 *Ссылка:* ${sharingUrl}\n`;
+        message += `🔗 *Ссылка для шеринга:* ${sharingUrl}\n`;
     }
+
     return message;
 }
 
@@ -142,47 +189,38 @@ app.post('/webhook', async (req, res) => {
             }
 
 
-// В обработчике личных сообщений, внутри блока if (chatId === adminChatId)
-
-// === КОМАНДА /test — эксперимент с API 300.ya.ru ===
+// === КОМАНДА /test ===
 if (text.startsWith('/test')) {
     await bot.sendMessage(adminChatId, '⏳ Запускаю тест API 300.ya.ru...');
 
-    // Получаем токен из конфига (или переменной окружения)
-    const yandexToken = state.YANDEX_TOKEN || process.env.YANDEX_TOKEN;
-    if (!yandexToken) {
-        await bot.sendMessage(adminChatId, '❌ YANDEX_TOKEN не задан. Установите токен в конфиге или переменной окружения.');
+    const token = state.YANDEX_TOKEN || process.env.YANDEX_TOKEN;
+    if (!token) {
+        await bot.sendMessage(adminChatId, '❌ YANDEX_TOKEN не задан.');
         return;
     }
 
-    // Ссылка для теста (можно заменить на любую)
-    const TEST_URL = 'https://habr.com/ru/news/729422/';
+    const testUrl = 'https://habr.com/ru/news/729422/';
 
     try {
-        // 1. Обычный пересказ
+        // Обычный режим
         await bot.sendMessage(adminChatId, '🔄 Обычный пересказ...');
-        const normalResult = await testPollSummary(
-            'https://300.ya.ru/api/generation',
-            { article_url: TEST_URL },
-            yandexToken
-        );
-        const normalMessage = formatTestResult('ОБЫЧНЫЙ ПЕРЕСКАЗ', normalResult);
-        await bot.sendMessage(adminChatId, normalMessage, { parse_mode: 'Markdown' });
+        const normalResult = await pollYandexSummary(testUrl, token);
+        const normalMsg = formatTestResult('ОБЫЧНЫЙ ПЕРЕСКАЗ', normalResult);
+        await bot.sendMessage(adminChatId, normalMsg, { parse_mode: 'Markdown' });
 
-        // 2. Нейро-пересказ
+        // Нейро-режим (если поддерживается)
         await bot.sendMessage(adminChatId, '🔄 Нейро-пересказ...');
-        const neuroResult = await testPollSummary(
-            'https://300.ya.ru/api/neuro/generation',
-            { article_url: TEST_URL },
-            yandexToken,
-            { 'X-Neuro-Page': 'yes' }
-        );
-        const neuroMessage = formatTestResult('НЕЙРО-ПЕРЕСКАЗ', neuroResult);
-        await bot.sendMessage(adminChatId, neuroMessage, { parse_mode: 'Markdown' });
+        const neuroResult = await pollYandexSummary(testUrl, token, true);
+        const neuroMsg = formatTestResult('НЕЙРО-ПЕРЕСКАЗ', neuroResult);
+        await bot.sendMessage(adminChatId, neuroMsg, { parse_mode: 'Markdown' });
 
         await bot.sendMessage(adminChatId, '✅ Тест завершён.');
     } catch (error) {
         await bot.sendMessage(adminChatId, `❌ Ошибка: ${error.message}`);
+        // Дополнительная диагностика
+        if (error.response) {
+            await bot.sendMessage(adminChatId, `📄 Статус: ${error.response.status}\n📄 Ответ: ${JSON.stringify(error.response.data, null, 2)}`);
+        }
     }
     return;
 }
