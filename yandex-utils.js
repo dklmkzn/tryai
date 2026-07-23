@@ -1,7 +1,7 @@
-// yandex-utils.js — версия 1.1.25
+// yandex-utils.js — версия 1.1.26
 // Получение контента через API 300.ya.ru с куками (originalUrl), fallback на парсинг (shortUrl).
 
-const VERSION = '1.1.25';
+const VERSION = '1.1.26';
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -130,9 +130,9 @@ function formatSummaryFromApi(data, logFn = null, adminChatId = null, bot = null
         });
     }
 
-    if (data.sharing_url) {
-        parts.push(`<a href="${escapeHtml(data.sharing_url)}">Открыть пересказ на 300.ya.ru</a>`);
-    }
+    // if (data.sharing_url) {
+    //     parts.push(`<a href="${escapeHtml(data.sharing_url)}">Открыть пересказ на 300.ya.ru</a>`);
+    // }
 
     return parts.join('\n');
 }
@@ -140,10 +140,10 @@ function formatSummaryFromApi(data, logFn = null, adminChatId = null, bot = null
 // ===== ОСНОВНАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ КОНТЕНТА =====
 async function extractTextFromYaRu(originalUrl, shortUrl, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false, cookieString = '') {
     // Принудительная диагностика
-    if (adminChatId && bot) {
-        const status = cookieString ? `ЗАДАНА (первые 20: ${cookieString.substring(0,20)}...)` : 'ОТСУТСТВУЕТ';
-        bot.sendMessage(adminChatId, `📝 [extractTextFromYaRu] originalUrl=${originalUrl}, shortUrl=${shortUrl}, cookieString=${status}, diagnosticMode=${diagnosticMode}`).catch(() => {});
-    }
+    // if (adminChatId && bot) {
+    //     const status = cookieString ? `ЗАДАНА (первые 20: ${cookieString.substring(0,20)}...)` : 'ОТСУТСТВУЕТ';
+    //     bot.sendMessage(adminChatId, `📝 [extractTextFromYaRu] originalUrl=${originalUrl}, shortUrl=${shortUrl}, cookieString=${status}, diagnosticMode=${diagnosticMode}`).catch(() => {});
+    // }
 
     try {
         // 1. Пытаемся получить через API с куками (используем оригинальную ссылку)
