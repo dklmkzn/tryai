@@ -285,7 +285,8 @@ app.get('/process', async (req, res) => {
             tgUtils.logMessage,
             adminChatId,
             bot,
-            state.DIAGNOSTIC_MODE
+            state.DIAGNOSTIC_MODE,
+    state.COOKIES   // <-- передаём куки
         );
         if (content.status === 200 && content.content && content.content.length > 100) {
             const parts = yandex.formatNews(content.title, content.content);
