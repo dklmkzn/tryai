@@ -1,6 +1,7 @@
-// yandex-utils.js — версия 1.1.21
-// API-режим: только тезисы, без лишних <b> и подписей. Заголовок добавляется в formatNews.
+// yandex-utils.js — версия 1.1.25
+// Получение контента через API 300.ya.ru с куками (originalUrl), fallback на парсинг (shortUrl).
 
+const VERSION = '1.1.25';
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -31,7 +32,6 @@ function escapeHtml(text) {
 
 // ===== API-МЕТОД С КУКАМИ =====
 async function getSummaryViaApi(articleUrl, cookieString, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
-safeLog(adminChatId, bot, `⚠️⚠️ ${diagnosticMode}⚠️⚠️`, 'info', true, logFn);
     const BASE_URL = 'https://300.ya.ru/api';
     const session = axios.create({
         headers: {
@@ -60,7 +60,7 @@ safeLog(adminChatId, bot, `⚠️⚠️ ${diagnosticMode}⚠️⚠️`, 'info', 
         const startPayload = { article_url: articleUrl, type: 'article', ignore_cache: false };
         const startResp = await session.post(`${BASE_URL}/generation`, startPayload);
         const startData = startResp.data;
-safeLog(adminChatId, bot, `⚠️ ${diagnosticMode}⚠️`, 'info', true, logFn);
+
         const statusCode = startData.status_code;
         if (statusCode === 2) {
             return { status: 'success', data: startData };
@@ -98,45 +98,28 @@ safeLog(adminChatId, bot, `⚠️ ${diagnosticMode}⚠️`, 'info', true, logFn)
     }
 }
 
-// ===== ФОРМАТИРОВАНИЕ РЕЗУЛЬТАТА API (только тезисы, без лишних тегов) =====
+// ===== ФОРМАТИРОВАНИЕ РЕЗУЛЬТАТА API (только тезисы) =====
 function formatSummaryFromApi(data, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
     let parts = [];
 
-    // ===== ДИАГНОСТИКА: что приходит в ответе =====
+    // Диагностика
     const keys = Object.keys(data);
-    const diagMsg = `📦 Ключи ответа API: ${keys.join(', ')}`;
-    safeLog(adminChatId, bot, diagMsg, 'info', diagnosticMode, logFn);
+    safeLog(adminChatId, bot, `📦 Ключи ответа API: ${keys.join(', ')}`, 'info', diagnosticMode, logFn);
 
     if (data.thesis) {
         const thesisCount = data.thesis.length;
-        const firstThesis = data.thesis[0]?.content || 'нет контента';
-        safeLog(adminChatId, bot, `📊 Тезисы: количество=${thesisCount}, первый тезис: ${firstThesis.substring(0, 100)}`, 'info', diagnosticMode, logFn);
+        safeLog(adminChatId, bot, `📊 Тезисов: ${thesisCount}`, 'info', diagnosticMode, logFn);
     } else {
-        safeLog(adminChatId, bot, '⚠️ Поле "thesis" отсутствует в ответе', 'warn', diagnosticMode, logFn);
+        safeLog(adminChatId, bot, '⚠️ Поле "thesis" отсутствует', 'warn', diagnosticMode, logFn);
     }
 
-    if (data.chapters) {
-        const chaptersCount = data.chapters.length;
-        const firstChapter = data.chapters[0]?.content || 'нет контента';
-        safeLog(adminChatId, bot, `📖 Главы: количество=${chaptersCount}, первая глава: ${firstChapter.substring(0, 100)}`, 'info', diagnosticMode, logFn);
-        // Выводим тезисы из первой главы для сравнения
-        const firstChapterTheses = data.chapters[0]?.theses || [];
-        if (firstChapterTheses.length) {
-            const firstThesisFromChapter = firstChapterTheses[0]?.content || '';
-            safeLog(adminChatId, bot, `🔹 Тезисы из первой главы: ${firstThesisFromChapter.substring(0, 100)}`, 'info', diagnosticMode, logFn);
-        }
-    } else {
-        safeLog(adminChatId, bot, '⚠️ Поле "chapters" отсутствует в ответе', 'warn', diagnosticMode, logFn);
-    }
-    // ===============================================
-
-    // Формируем тезисы (если есть)
+    // Формируем тезисы
     if (data.thesis && data.thesis.length) {
         data.thesis.forEach((t) => {
             parts.push(`• ${escapeHtml(t.content)}`);
         });
     } else if (data.chapters && data.chapters.length) {
-        // Если thesis нет, используем тезисы из глав (но это не должно происходить)
+        // Fallback на главы (если thesis нет)
         safeLog(adminChatId, bot, '⚠️ Используем тезисы из глав (fallback)', 'warn', diagnosticMode, logFn);
         data.chapters.forEach((ch) => {
             if (ch.theses && ch.theses.length) {
@@ -155,22 +138,21 @@ function formatSummaryFromApi(data, logFn = null, adminChatId = null, bot = null
 }
 
 // ===== ОСНОВНАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ КОНТЕНТА =====
-async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false, cookieString = '') {
-    // Принудительная диагностика: состояние кук
-if (adminChatId && bot) {
-    const status = cookieString ? `ЗАДАНА (первые 20: ${cookieString.substring(0,20)}...)` : 'ОТСУТСТВУЕТ';
-    bot.sendMessage(adminChatId, `📝 [extractTextFromYaRu] cookieString = ${status}, diagnosticMode = ${diagnosticMode}`).catch(() => {});
-}
-    safeLog(adminChatId, bot, `1⚠️ ${(cookieString?1:0)}⚠️1`, 'info', true, logFn);
-    safeLog(adminChatId, bot, `1⚠️ ${diagnosticMode}⚠️1`, 'info', true, logFn);
+async function extractTextFromYaRu(originalUrl, shortUrl, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false, cookieString = '') {
+    // Принудительная диагностика
+    if (adminChatId && bot) {
+        const status = cookieString ? `ЗАДАНА (первые 20: ${cookieString.substring(0,20)}...)` : 'ОТСУТСТВУЕТ';
+        bot.sendMessage(adminChatId, `📝 [extractTextFromYaRu] originalUrl=${originalUrl}, shortUrl=${shortUrl}, cookieString=${status}, diagnosticMode=${diagnosticMode}`).catch(() => {});
+    }
+
     try {
+        // 1. Пытаемся получить через API с куками (используем оригинальную ссылку)
         if (cookieString) {
-            const apiResult = await getSummaryViaApi(url, cookieString, logFn, adminChatId, bot, diagnosticMode);
+            const apiResult = await getSummaryViaApi(originalUrl, cookieString, logFn, adminChatId, bot, diagnosticMode);
             if (apiResult.status === 'success') {
                 const data = apiResult.data;
-safeLog(adminChatId, bot, `⚠️ ${diagnosticMode}⚠️`, 'info', true, logFn);
                 const content = formatSummaryFromApi(data, logFn, adminChatId, bot, diagnosticMode);
-safeLog(adminChatId, bot, '✅ Контент получен через API (только тезисы)', 'info', diagnosticMode || true, logFn);
+                safeLog(adminChatId, bot, '✅ Контент получен через API (только тезисы)', 'info', diagnosticMode, logFn);
                 return {
                     status: 200,
                     title: data.title || '',
@@ -182,8 +164,9 @@ safeLog(adminChatId, bot, '✅ Контент получен через API (т�
             }
         }
 
-        // Fallback: парсинг страницы
-        const response = await axios.get(url, {
+        // 2. Fallback: парсинг страницы (используем короткую ссылку)
+        const urlToParse = shortUrl || originalUrl;
+        const response = await axios.get(urlToParse, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -209,7 +192,7 @@ safeLog(adminChatId, bot, '✅ Контент получен через API (т�
         }
         return { status: 200, title, content, origin: originLink };
     } catch (e) {
-        const errMsg = `Ошибка получения контента (парсинг): ${e.message}`;
+        const errMsg = `Ошибка получения контента: ${e.message}`;
         safeLog(adminChatId, bot, errMsg, 'error', diagnosticMode, logFn);
         if (e.response) {
             safeLog(adminChatId, bot, `Статус: ${e.response.status}`, 'error', diagnosticMode, logFn);
@@ -269,7 +252,7 @@ function parseContent(fullText) {
     return { title: titleText, content: cleanText };
 }
 
-// ===== ФОРМАТИРОВАНИЕ ДЛЯ ОТПРАВКИ (с заголовком) =====
+// ===== ФОРМАТИРОВАНИЕ ДЛЯ ОТПРАВКИ =====
 function formatNews(title, content) {
     const safeTitle = escapeHtml(title);
     const safeContent = escapeHtml(content);
@@ -366,6 +349,7 @@ async function getShortUrl(articleUrl, yandexToken, logFn = null, adminChatId = 
 }
 
 module.exports = {
+    VERSION,
     getShortUrl,
     extractTextFromYaRu,
     parseContent,
