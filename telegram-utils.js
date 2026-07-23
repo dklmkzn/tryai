@@ -1,4 +1,4 @@
-// telegram-utils.js — версия 1.1.16
+// telegram-utils.js — версия 1.1.1 6
 const VERSION = '1.1.16';
 const axios = require('axios');
 
