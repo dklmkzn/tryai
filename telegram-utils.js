@@ -1,12 +1,8 @@
-// telegram-utils.js — версия 1.1.14
+// telegram-utils.js — версия 1.1.16
+const VERSION = '1.1.16';
 const axios = require('axios');
 
-// ===== ОСНОВНАЯ ФУНКЦИЯ ЛОГИРОВАНИЯ =====
 function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = false) {
-    // Критические ошибки отправляем в личку админу (если он есть) и в консоль (всегда)
-    // Но согласно новым требованиям, вывод в консоль для критических ошибок отключаем, оставляем только в личку,
-    // за исключением "Ошибка установки вебхука" — она обрабатывается отдельно в index.js.
-    // Поэтому здесь мы не выводим в консоль ничего, кроме случаев, когда админа нет (тогда в консоль).
     const isCritical = level === 'error' && (
         message.includes('Self-ping failed') ||
         message.includes('Недостаточно параметров') ||
@@ -16,15 +12,11 @@ function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = 
         message.includes('extractTextFromYaRu')
     );
 
-    // Если админ ещё не назначен — выводим в консоль (чтобы видеть ошибки до назначения)
     if (!adminChatId) {
         console.log(`[${level}] ${message}`);
         return;
     }
 
-    // Если админ назначен:
-    // - Критические ошибки отправляем только в личку (в консоль не выводим)
-    // - Остальные сообщения отправляем только если диагностика включена
     if (isCritical) {
         if (bot) {
             bot.sendMessage(adminChatId, `⚠️ ${message}`).catch(e => console.error('Ошибка отправки критического:', e.message));
@@ -36,16 +28,12 @@ function logMessage(adminChatId, bot, message, level = 'info', diagnosticMode = 
         if (bot) {
             bot.sendMessage(adminChatId, `📝 ${message}`).catch(e => {
                 console.error(`Не удалось отправить диагностику: ${e.message}`);
-                // fallback в консоль, если не отправилось
                 console.log(`[${level}] ${message}`);
             });
         }
         return;
     }
-    // Если диагностика выключена и не критично — ничего не делаем
 }
-
-// ===== ОСТАЛЬНЫЕ ФУНКЦИИ (без изменений) =====
 
 function logToAdmin(adminChatId, bot, message) {
     logMessage(adminChatId, bot, message, 'info', false);
@@ -74,13 +62,7 @@ function isUsernameMatchMask(username, mask) {
 function scheduleSelfPing(params, renderUrl) {
     const url = `${renderUrl}/process?` + new URLSearchParams(params).toString();
     setTimeout(() => {
-        axios.get(url).catch(err => {
-            // Self-ping ошибка — критическая, отправляем через logMessage, но здесь мы не можем вызвать logMessage без параметров
-            // Поэтому логируем в консоль, но это будет видно только до назначения админа или в личку через logMessage
-            console.error('Self-ping failed:', err.message);
-            // Если админ есть, отправляем в личку через logMessage (но здесь нет доступа к adminChatId, поэтому оставляем как есть)
-            // В идеале нужно передавать adminChatId, но проще оставить console.error, так как эта ошибка критична
-        });
+        axios.get(url).catch(err => console.error('Self-ping failed:', err.message));
     }, 1000);
 }
 
@@ -116,6 +98,7 @@ async function processUrl(chatId, text, originalMessageId, deps) {
         const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
         const params = {
             shortUrl,
+            originalUrl,   // <-- добавляем оригинальную ссылку
             chatId,
             messageId: sentMsg.message_id,
             attempt: 1,
@@ -133,6 +116,7 @@ async function processUrl(chatId, text, originalMessageId, deps) {
 }
 
 module.exports = {
+    VERSION,
     logMessage,
     logToAdmin,
     notifyAdmin,
