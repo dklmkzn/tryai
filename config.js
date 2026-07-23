@@ -1,8 +1,7 @@
-// config.js — версия 1.1.27
-// Состояние и методы бота.
-// Обфускация: кодируем весь JSON массива в закреплённом сообщении.
+// config.js — версия 1.1.28
+// Разделение: закреплённые сообщения декодируются, команды от админа парсятся как есть.
 
-const VERSION = '1.1.27';
+const VERSION = '1.1.28';
 
 const state = {
     VERSION,
@@ -23,7 +22,7 @@ const state = {
     DEPLOY_HOOK_URL: '',
     COOKIES: '',
 
-    // ===== ОБФУСКАЦИЯ (упрощённая) =====
+    // ===== ОБФУСКАЦИЯ =====
     encodeString(str) {
         let encoded = str.replace(/\d/g, d => 9 - parseInt(d));
         encoded = Buffer.from(encoded, 'utf8').toString('base64');
@@ -53,36 +52,63 @@ const state = {
         return str;
     },
 
-    extractConfig(text, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
+    // Для закреплённых сообщений (декодирует + парсит)
+    extractConfigFromPinned(text, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
         if (!text) {
-            this.safeLog(adminChatId, bot, 'extractConfig: текст пуст', 'warn', diagnosticMode, logFn);
+            this.safeLog(adminChatId, bot, 'extractConfigFromPinned: текст пуст', 'warn', diagnosticMode, logFn);
             return null;
         }
         let match = text.match(/\[\[\[\s*([\s\S]*?)\s*\]\]\]/);
         if (!match) {
-            this.safeLog(adminChatId, bot, 'extractConfig: маркер [[[ ... ]]] не найден', 'warn', diagnosticMode, logFn);
+            this.safeLog(adminChatId, bot, 'extractConfigFromPinned: маркер [[[ ... ]]] не найден', 'warn', diagnosticMode, logFn);
             return null;
         }
         let inner = match[1].trim();
-        // Декодируем строку
         let decoded;
         try {
             decoded = this.decodeString(inner);
         } catch (e) {
-            this.safeLog(adminChatId, bot, `extractConfig: ошибка декодирования: ${e.message}`, 'error', diagnosticMode, logFn);
+            this.safeLog(adminChatId, bot, `extractConfigFromPinned: ошибка декодирования: ${e.message}`, 'error', diagnosticMode, logFn);
             return null;
         }
         try {
             const arr = JSON.parse(decoded);
             if (Array.isArray(arr) && arr.length === 16) {
-                this.safeLog(adminChatId, bot, `extractConfig: успешно извлечён массив из ${arr.length} элементов`, 'info', diagnosticMode, logFn);
+                this.safeLog(adminChatId, bot, `extractConfigFromPinned: успешно извлечён массив из ${arr.length} элементов`, 'info', diagnosticMode, logFn);
                 return arr;
             } else {
-                this.safeLog(adminChatId, bot, `extractConfig: массив имеет длину ${arr.length}, ожидается 16`, 'warn', diagnosticMode, logFn);
+                this.safeLog(adminChatId, bot, `extractConfigFromPinned: массив имеет длину ${arr.length}, ожидается 16`, 'warn', diagnosticMode, logFn);
                 return null;
             }
         } catch (e) {
-            this.safeLog(adminChatId, bot, `extractConfig: ошибка парсинга JSON: ${e.message}`, 'error', diagnosticMode, logFn);
+            this.safeLog(adminChatId, bot, `extractConfigFromPinned: ошибка парсинга JSON: ${e.message}`, 'error', diagnosticMode, logFn);
+            return null;
+        }
+    },
+
+    // Для команд от админа (только парсит, без декодирования)
+    parseConfigFromCommand(text, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
+        if (!text) {
+            this.safeLog(adminChatId, bot, 'parseConfigFromCommand: текст пуст', 'warn', diagnosticMode, logFn);
+            return null;
+        }
+        let match = text.match(/\[\[\[\s*([\s\S]*?)\s*\]\]\]/);
+        if (!match) {
+            this.safeLog(adminChatId, bot, 'parseConfigFromCommand: маркер [[[ ... ]]] не найден', 'warn', diagnosticMode, logFn);
+            return null;
+        }
+        let inner = match[1].trim();
+        try {
+            const arr = JSON.parse(inner);
+            if (Array.isArray(arr) && arr.length === 16) {
+                this.safeLog(adminChatId, bot, `parseConfigFromCommand: успешно извлечён массив из ${arr.length} элементов`, 'info', diagnosticMode, logFn);
+                return arr;
+            } else {
+                this.safeLog(adminChatId, bot, `parseConfigFromCommand: массив имеет длину ${arr.length}, ожидается 16`, 'warn', diagnosticMode, logFn);
+                return null;
+            }
+        } catch (e) {
+            this.safeLog(adminChatId, bot, `parseConfigFromCommand: ошибка парсинга JSON: ${e.message}`, 'error', diagnosticMode, logFn);
             return null;
         }
     },
@@ -125,7 +151,7 @@ const state = {
                 this.safeLog(adminChatId, bot, 'loadConfigFromPinned: закреплённое сообщение не содержит текст', 'warn', diagnosticMode, logFn);
                 return false;
             }
-            const arr = this.extractConfig(pinned.text, logFn, adminChatId, bot, diagnosticMode);
+            const arr = this.extractConfigFromPinned(pinned.text, logFn, adminChatId, bot, diagnosticMode);
             if (arr) {
                 this.applyConfig(arr);
                 this.safeLog(adminChatId, bot, 'loadConfigFromPinned: конфиг успешно применён', 'info', diagnosticMode, logFn);
@@ -154,7 +180,6 @@ const state = {
                     this.safeLog(adminChatId, bot, `Не удалось удалить старое: ${e.message}`, 'warn', diagnosticMode, logFn);
                 }
             }
-            // Кодируем весь JSON массива
             const json = JSON.stringify(arr);
             const encoded = this.encodeString(json);
             const text = `[[[\n${encoded}\n]]]`;
