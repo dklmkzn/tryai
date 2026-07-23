@@ -1,7 +1,7 @@
 // yandex-utils.js — версия 1.1.26
 // Получение контента через API 300.ya.ru с куками (originalUrl), fallback на парсинг (shortUrl).
 
-const VERSION = '1.1.26';
+const VERSION = '1.1.25';
 const axios = require('axios');
 const cheerio = require('cheerio');
 
