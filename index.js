@@ -1,5 +1,5 @@
 // index.js — версия 1.1.24
-const VERSION = '1.1.24';
+const VERSION = '1.1.25';
 const express = require('express');
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
