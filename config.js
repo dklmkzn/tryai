@@ -9,7 +9,7 @@ const state = {
     allowedChannelsNoDomainCheck: [],
     allowedGroupsNoDomainCheck: [],
     YANDEX_TOKEN: '',
-    DIAGNOSTIC_MODE: false,
+    DIAGNOSTIC_MODE: true,
     ACTIVE_INTERVAL: 3000,
     MAX_ACTIVE_ATTEMPTS: 100,
     LONG_INTERVAL: 60000,
