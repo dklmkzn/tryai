@@ -1,4 +1,4 @@
-// index.js — версия 1.1.9
+// index.js — версия 1.1.14
 const express = require('express');
 const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
@@ -19,15 +19,15 @@ const tasks = new Map();
 let adminChatId = null;
 const greetedUsers = new Map();
 
+// Устанавливаем токен из состояния (если есть)
 yandex.setYandexToken(state.YANDEX_TOKEN);
 
-
-
-
+// ===== ФУНКЦИЯ ЛОГИРОВАНИЯ =====
 function log(message, level = 'info', diagnosticMode = false) {
     tgUtils.logMessage(adminChatId, bot, message, level, diagnosticMode || state.DIAGNOSTIC_MODE);
 }
 
+// ===== ОБРАБОТЧИК ВЕБХУКА =====
 app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 
@@ -42,10 +42,13 @@ app.post('/webhook', async (req, res) => {
     const userId = message.from?.id;
     const chatIdStrNorm = state.normalizeId(chatId);
 
-    log(`📥 Вебхук: chatId=${chatId} (норм: ${chatIdStrNorm}), type=${chatType}, user=${username}`, 'info');
+    // До назначения админа лог вебхука не выводим (закомментирован)
+    // log(`📥 Вебхук: chatId=${chatId}...`, 'info');
 
     if (chatType === 'private') {
+        // === АДМИНИСТРАТОР УЖЕ НАЗНАЧЕН ===
         if (chatId === adminChatId) {
+            // Конфиг через [[[
             if (text.includes('[[')) {
                 const arr = state.extractConfig(text, log, adminChatId, bot, state.DIAGNOSTIC_MODE);
                 if (arr) {
@@ -63,31 +66,7 @@ app.post('/webhook', async (req, res) => {
                 return;
             }
 
-
-if (text.startsWith('/new')) {
-    const hookId = state.DEPLOY_HOOK_ID;
-    if (!hookId) {
-        await bot.sendMessage(adminChatId, '❌ Deploy Hook ID не задан в конфиге.');
-        return;
-    }
-    const hookUrl = `https://api.render.com/deploy/${hookId}`;
-    try {
-        const response = await axios.post(hookUrl);
-        if (response.status === 200 || response.status === 204) {
-            await bot.sendMessage(adminChatId, '✅ Деплой запущен! Ожидайте обновления.');
-            log(`Запущен деплой через hook: ${hookUrl}`, 'info');
-        } else {
-            await bot.sendMessage(adminChatId, `⚠️ Деплой вернул статус ${response.status}`);
-        }
-    } catch (e) {
-        await bot.sendMessage(adminChatId, `❌ Ошибка при запуске деплоя: ${e.message}`);
-        log(`Ошибка деплоя: ${e.message}`, 'error');
-    }
-    return;
-}
-
-
-            
+            // /reload
             if (text.startsWith('/reload')) {
                 const loaded = await state.loadConfigFromPinned(adminChatId, bot, log, true);
                 if (loaded) {
@@ -99,6 +78,7 @@ if (text.startsWith('/new')) {
                 return;
             }
 
+            // /unpin
             if (text.startsWith('/unpin')) {
                 try {
                     const chat = await bot.getChat(adminChatId);
@@ -116,6 +96,29 @@ if (text.startsWith('/new')) {
                 return;
             }
 
+            // /new — запуск деплоя
+            if (text.startsWith('/new')) {
+                const hookUrl = state.DEPLOY_HOOK_URL;
+                if (!hookUrl) {
+                    await bot.sendMessage(adminChatId, '❌ Deploy Hook URL не задан в конфиге.');
+                    return;
+                }
+                try {
+                    const response = await axios.post(hookUrl);
+                    if (response.status === 200 || response.status === 204) {
+                        await bot.sendMessage(adminChatId, '✅ Деплой запущен! Ожидайте обновления.');
+                        log(`Запущен деплой через hook: ${hookUrl}`, 'info');
+                    } else {
+                        await bot.sendMessage(adminChatId, `⚠️ Деплой вернул статус ${response.status}`);
+                    }
+                } catch (e) {
+                    await bot.sendMessage(adminChatId, `❌ Ошибка при запуске деплоя: ${e.message}`);
+                    log(`Ошибка деплоя: ${e.message}`, 'error');
+                }
+                return;
+            }
+
+            // Обработка ссылки (только диагностика, если включена)
             await tgUtils.processUrl(chatId, text, null, {
                 bot,
                 tasks,
@@ -130,19 +133,29 @@ if (text.startsWith('/new')) {
             return;
         }
 
+        // === АДМИНИСТРАТОР ЕЩЁ НЕ НАЗНАЧЕН ===
         if (!adminChatId) {
+            // Приветствие
             if (!greetedUsers.has(chatId)) {
                 greetedUsers.set(chatId, true);
                 await bot.sendMessage(chatId, 'Здравствуйте!');
+                // Лог приветствия закомментирован (не выводим)
+                // log(`Отправлено приветствие пользователю ${chatId}`, 'info');
                 return;
             }
+
+            // Проверка маски (логи закомментированы)
+            // log(`Проверка маски от ${username}: текст="${text}"`, 'info');
 
             const maskMatch = text.match(/^([a-zA-Zа-яА-Я])\*([a-zA-Zа-яА-Я])$/);
             if (maskMatch) {
                 const mask = maskMatch[0];
+                // log(`Найдена маска: ${mask}`, 'info');
                 if (tgUtils.isUsernameMatchMask(username, mask)) {
                     adminChatId = chatId;
-                    let greeting = '✅ Вы назначились администратором бота.';
+                    // Сообщение о назначении не выводим в консоль, только в личку (без ID)
+                    // console.log(`Администратор назначен`); // закомментировано
+                    let greeting = '✅ Вы назначились администратором.';
                     try {
                         const configLoaded = await state.loadConfigFromPinned(adminChatId, bot, log, true);
                         if (configLoaded) {
@@ -152,28 +165,37 @@ if (text.startsWith('/new')) {
                             greeting += '\nКонфиг не найден, используются значения по умолчанию.';
                         }
                     } catch (e) {
+                        // Ошибка загрузки конфига — логируем в личку (если диагностика включена)
                         log(`Ошибка загрузки конфига: ${e.message}`, 'error');
                         greeting += '\n⚠️ Ошибка загрузки конфига.';
                     }
                     await bot.sendMessage(adminChatId, greeting);
+                    // Лог отправки приветствия админу закомментирован
+                    // log(`Отправлено приветствие админу: ${greeting}`, 'info');
                     return;
                 } else {
-                    await bot.sendMessage(chatId, 'Здравствуйте!');
+                    // Маска не подходит — логируем в личку (если диагностика включена)
+                    log(`Маска не подходит для username ${username}`, 'info');
+                    await bot.sendMessage(chatId, '❌ Маска не подходит для вашего username. Попробуйте ещё раз.');
                     return;
                 }
             } else {
+                // Маска не найдена — логируем в личку (если диагностика включена)
+                log(`Маска не найдена в тексте: "${text}"`, 'info');
                 greetedUsers.set(chatId, true);
-                await bot.sendMessage(chatId, 'Здравствуйте!', { parse_mode: 'Markdown' });
+                await bot.sendMessage(chatId, 'Здравствуйте! Отправьте маску вида `б*б` (например, d*n).', { parse_mode: 'Markdown' });
                 return;
             }
         }
     }
 
+    // === КАНАЛЫ И ГРУППЫ ===
     const isChannel = chatType === 'channel';
     const isGroup = chatType === 'group' || chatType === 'supergroup';
 
     if (isChannel) {
         if (!state.allowedChannels.includes(chatIdStrNorm)) {
+            // Лог только в личку, если диагностика включена
             log(`❌ Канал ${chatId} не разрешён`, 'error');
             return;
         }
@@ -197,6 +219,7 @@ if (text.startsWith('/new')) {
         }
     }
 
+    // Проверка домена
     const isDomainCheckSkipped = (isChannel && state.allowedChannelsNoDomainCheck.includes(chatIdStrNorm)) ||
                                  (isGroup && state.allowedGroupsNoDomainCheck.includes(chatIdStrNorm));
     const urlMatch = text.match(/https?:\/\/[^\s]+/);
@@ -241,11 +264,13 @@ if (text.startsWith('/new')) {
     });
 });
 
+// ===== /process =====
 app.get('/process', async (req, res) => {
     res.sendStatus(200);
 
     const { shortUrl, chatId, messageId, attempt, phase } = req.query;
     if (!shortUrl || !chatId || !messageId) {
+        // Критическая ошибка — отправляем в личку админу (если есть) и в консоль (критические ошибки всегда в консоль)
         log('Недостаточно параметров в /process', 'error');
         return;
     }
@@ -269,8 +294,7 @@ app.get('/process', async (req, res) => {
                     [{ text: 'Открыть пересказ на 300.ya.ru', url: shortUrl }]
                 ]
             };
-log(parts[0], 'info');       
-await log(parts[0], 'info');                  
+            // Отправляем или редактируем сообщение (диагностика через log, если включена)
             await bot.editMessageText(parts[0], {
                 chat_id: chatId,
                 message_id: parseInt(messageId),
@@ -278,9 +302,7 @@ await log(parts[0], 'info');
                 reply_markup: keyboard
             });
             if (parts.length > 1) {
-                for (let i = 1; i < parts.length; i++) { 
-await log(parts[i], 'info');                    
-log(parts[i], 'info');
+                for (let i = 1; i < parts.length; i++) {
                     await new Promise(resolve => setTimeout(resolve, 500));
                     await bot.sendMessage(chatId, parts[i], {
                         parse_mode: 'HTML',
@@ -298,12 +320,20 @@ log(parts[i], 'info');
                 }
             }
             return;
+        } else if (content.status === 202) {
+            // Страница ещё не стабилизировалась — ничего не делаем, процесс запланирует повтор
+            log('Страница ещё не стабилизирована, ожидание...', 'info');
+            // Не удаляем задачу, она продолжит жить
         }
     } catch (e) {
         log(`Ошибка проверки контента: ${e.message}`, 'error');
-        log(`Ошибка проверки контента: ${JSON.stringify(req.query)}`, 'error');
+        // Дополнительная диагностика ошибки
+        if (e.message && e.message.includes('ETELEGRAM')) {
+            log(`Текст, вызвавший ошибку (первые 500): ${parts ? parts[0]?.substring(0,500) : 'нет данных'}`, 'error');
+        }
     }
 
+    // Если контент не готов, планируем следующую проверку
     let nextAttempt = attemptNum + 1;
     let nextPhase = currentPhase;
 
@@ -351,11 +381,12 @@ log(parts[i], 'info');
     }, interval);
 });
 
+// ===== /ping, /status =====
 app.get('/ping', (req, res) => res.sendStatus(200));
 
 app.get('/status', (req, res) => {
     res.json({
-        version: '1.1.9',
+        version: '1.1.14',
         uptime: process.uptime(),
         tasksCount: tasks.size,
         activeTasks: Array.from(tasks.keys()),
@@ -364,6 +395,7 @@ app.get('/status', (req, res) => {
     });
 });
 
+// ===== ЗАПУСК =====
 function startPingScheduler() {
     const randomInterval = () => {
         const min = state.PING_MIN_INTERVAL;
@@ -373,6 +405,7 @@ function startPingScheduler() {
 
     function doPing() {
         axios.get(`${RENDER_URL}/ping`).catch(err => {
+            // Критическая ошибка — выводится в консоль и в личку (если админ есть)
             console.error('Дежурный пинг не удался:', err.message);
             if (adminChatId) {
                 tgUtils.logMessage(adminChatId, bot, `⚠️ Дежурный пинг не удался: ${err.message}`, 'error', state.DIAGNOSTIC_MODE);
@@ -388,9 +421,7 @@ async function setWebhook(url) {
     if (!url) {
         const msg = 'RENDER_URL не определён, вебхук не может быть установлен';
         console.error(msg);
-        if (adminChatId) {
-            tgUtils.logMessage(adminChatId, bot, `⚠️ ${msg}`, 'error', state.DIAGNOSTIC_MODE);
-        }
+        // Ошибка установки вебхука — выводим в консоль (админа может ещё не быть)
         return false;
     }
     const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/setWebhook?url=${encodeURIComponent(url)}`;
@@ -398,13 +429,14 @@ async function setWebhook(url) {
         const response = await axios.get(apiUrl);
         if (response.data && response.data.ok) {
             console.log(`Вебхук установлен на ${url}`);
+            // Сообщение админу отправляем только если админ есть и диагностика включена
             if (adminChatId) {
                 tgUtils.logMessage(adminChatId, bot, `✅ Вебхук установлен на ${url}`, 'info', state.DIAGNOSTIC_MODE);
             }
             return true;
         } else {
             const msg = `Ошибка установки вебхука: ${response.data.description || 'неизвестная ошибка'}`;
-            console.error(msg);
+            console.error(msg); // в консоль всегда
             if (adminChatId) {
                 tgUtils.logMessage(adminChatId, bot, `⚠️ ${msg}`, 'error', state.DIAGNOSTIC_MODE);
             }
@@ -412,7 +444,7 @@ async function setWebhook(url) {
         }
     } catch (e) {
         const msg = `Ошибка при запросе к Telegram API: ${e.message}`;
-        console.error(msg);
+        console.error(msg); // в консоль всегда
         if (adminChatId) {
             tgUtils.logMessage(adminChatId, bot, `⚠️ ${msg}`, 'error', state.DIAGNOSTIC_MODE);
         }
@@ -421,7 +453,8 @@ async function setWebhook(url) {
 }
 
 app.listen(PORT, async () => {
-    console.log(`Бот запущен, версия 1.1.9, порт ${PORT}`);
+    // Только стартовые сообщения в консоль
+    console.log(`Бот запущен, версия 1.1.14, порт ${PORT}`);
     const webhookUrl = `${RENDER_URL}/webhook`;
     await setWebhook(webhookUrl);
     startPingScheduler();
