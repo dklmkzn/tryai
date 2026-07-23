@@ -202,13 +202,13 @@ app.post('/webhook', async (req, res) => {
                     await bot.sendMessage(adminChatId, greeting);
                     return;
                 } else {
-                    log(`Маска не подходит для username ${username}`, 'info');
-                    await bot.sendMessage(chatId, '❌ Маска не подходит для вашего username. Попробуйте ещё раз.');
+                    log(`Здравствуйте!`, 'info');
+                    await bot.sendMessage(chatId, 'Здравствуйте!');
                     return;
                 }
             } else {
                 greetedUsers.set(chatId, true);
-                await bot.sendMessage(chatId, 'Здравствуйте! Отправьте маску вида `б*б` (например, d*n).', { parse_mode: 'Markdown' });
+                await bot.sendMessage(chatId, 'Здравствуйте!', { parse_mode: 'Markdown' });
                 return;
             }
         }
