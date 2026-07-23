@@ -1,4 +1,4 @@
-// yandex-utils.js — версия 1.1.7
+// yandex-utils.js — версия 1.1.14
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -6,6 +6,8 @@ let configYandexToken = '';
 
 function setYandexToken(token) {
     configYandexToken = token;
+    // Это сообщение выводится в консоль только при старте (токен пустой) и при загрузке конфига (токен установлен)
+    // Мы его оставляем, так как оно относится к стартовым диагностическим сообщениям (пункт 2-4)
     console.log(`[setYandexToken] токен ${token ? 'установлен (первые 10: ' + token.substring(0,10) + '...)' : 'пустой'}`);
 }
 
@@ -13,12 +15,22 @@ function safeLog(adminChatId, bot, message, level, diagnosticMode, logFn) {
     if (logFn) {
         logFn(message, level, diagnosticMode);
     } else {
+        // fallback — если logFn не передана, пишем в консоль (но у нас всегда передаётся)
         console.log(`[${level}] ${message}`);
     }
 }
 
+function escapeHtml(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 async function getShortUrl(articleUrl, yandexToken, logFn = null, adminChatId = null, bot = null, diagnosticMode = false) {
-    // Используем переданный токен или внутренний
     const usedToken = yandexToken || configYandexToken;
     const tokenPreview = usedToken ? usedToken.substring(0,10) + '...' : 'НЕ ЗАДАН';
     safeLog(adminChatId, bot, `[getShortUrl] используемый токен: ${tokenPreview} (передан yandexToken=${!!yandexToken}, configYandexToken=${!!configYandexToken})`, 'info', diagnosticMode, logFn);
@@ -75,7 +87,24 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
         const originLink = $('a').filter((i, el) => $(el).text().includes('Перейти на оригинал')).attr('href') || '';
         const fullText = $('body').text();
 
-        const diagMsg = `📄 Получена страница ${url}, первые 500 символов:\n${fullText.substring(0, 500)}\n🔍 Фраза "Данный формат временно недоступен для этого видео" ${fullText.includes('Данный формат временно недоступен для этого видео') ? 'ПРИСУТСТВУЕТ' : 'ОТСУТСТВУЕТ'}`;
+        // Проверка на нестабильность
+        const isUnstableGeneral = (
+            fullText.includes('__sveltekit_') ||
+            fullText.includes('mc.yandex.ru') ||
+            fullText.includes('Краткий пересказ ... доступен только пользователям Яндекс Браузера') ||
+            fullText.includes('Authorization: OAuth <token>') ||
+            fullText.includes('import requests') ||
+            fullText.includes('Пользовательское соглашение') ||
+            fullText.includes('Как использовать API')
+        );
+
+        if (isUnstableGeneral) {
+            safeLog(adminChatId, bot, `Страница ещё не стабилизирована (обнаружен мусор). Первые 200 символов: ${fullText.substring(0, 200)}`, 'info', diagnosticMode, logFn);
+            return { status: 202, title: '', content: '', origin: '' };
+        }
+
+        // Диагностика стабильной страницы
+        const diagMsg = `📄 Получена стабильная страница ${url}, первые 500 символов:\n${fullText.substring(0, 500)}`;
         safeLog(adminChatId, bot, diagMsg, 'info', diagnosticMode, logFn);
 
         const { title, content } = parseContent(fullText);
@@ -91,25 +120,34 @@ async function extractTextFromYaRu(url, yandexToken, logFn = null, adminChatId =
 }
 
 function parseContent(fullText) {
-    const isYandexGptSummary = /YandexGPT\s+краткий пересказ статьи от нейросети/im.test(fullText);
+    let cleaned = fullText.replace(/Данный формат временно недоступен для этого видео/gi, '');
+
+    const parts = cleaned.split(/(Пользовательское соглашение|API|Как использовать API)/i);
+    if (parts.length > 1) {
+        cleaned = parts[0].trim();
+    }
+
+    cleaned = cleaned.replace(/©.*$/gm, '');
+
+    const isYandexGptSummary = /YandexGPT\s+краткий пересказ статьи от нейросети/im.test(cleaned);
     const startMarker = /Пересказ сделан (.{0,50}?)Обновить/s;
-    const startMatch = fullText.match(startMarker);
+    const startMatch = cleaned.match(startMarker);
     const endMarker = /Для улучшения качества предложите свой вариант/im;
-    const endMatch = fullText.match(endMarker);
+    const endMatch = cleaned.match(endMarker);
     const dividerMarker = isYandexGptSummary
         ? /Кратко\s+Подробно/im
         : /\d{2}:\d{2}:\d{2}/;
-    const dividerMatch = fullText.match(dividerMarker);
+    const dividerMatch = cleaned.match(dividerMarker);
 
-    let contentText = fullText;
+    let contentText = cleaned;
     let titleText = '';
 
     if (startMatch && dividerMatch && endMatch) {
         const startPos = startMatch.index + startMatch[0].length;
         const dividerPos = dividerMatch.index;
         const endPos = endMatch.index;
-        const title = fullText.slice(startPos, dividerPos).trim();
-        contentText = fullText.slice(dividerPos + dividerMatch[0].length, endPos).trim();
+        const title = cleaned.slice(startPos, dividerPos).trim();
+        contentText = cleaned.slice(dividerPos + dividerMatch[0].length, endPos).trim();
         titleText = title || '';
         if (!isYandexGptSummary) {
             contentText = contentText.replace(/\d{2}:\d{2}:\d{2}/g, '');
@@ -129,14 +167,17 @@ function parseContent(fullText) {
 }
 
 function formatNews(title, content) {
+    const safeTitle = escapeHtml(title);
+    const safeContent = escapeHtml(content);
+
     const BUTTON_TEXT = 'Открыть пересказ на 300.ya.ru';
     const BUTTON_URL_LENGTH = 30;
     const BUTTON_TOTAL_LENGTH = BUTTON_TEXT.length + BUTTON_URL_LENGTH + 10;
     const MAX_MESSAGE_LENGTH = 4096 - BUTTON_TOTAL_LENGTH - 30;
 
-    const fullTitle = title ? `${title}\nПересказ YandexGPT на 300.ya.ru` : 'Пересказ YandexGPT на 300.ya.ru';
-    const formattedTitle = title ? `<b>${title}</b>` : '';
-    const fullText = formattedTitle + (content ? `\n<blockquote>\n<b>Пересказ YandexGPT на 300.ya.ru</b>\n\n${content}</blockquote>` : '');
+    const fullTitle = safeTitle ? `${safeTitle}\nПересказ YandexGPT на 300.ya.ru` : 'Пересказ YandexGPT на 300.ya.ru';
+    const formattedTitle = safeTitle ? `<b>${safeTitle}</b>` : '';
+    const fullText = formattedTitle + (safeContent ? `\n<blockquote>\n<b>Пересказ YandexGPT на 300.ya.ru</b>\n\n${safeContent}</blockquote>` : '');
 
     if (fullText.length <= MAX_MESSAGE_LENGTH) {
         return [fullText];
