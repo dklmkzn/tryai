@@ -62,7 +62,7 @@ if (text.startsWith('/reload')) {
             await bot.sendMessage(adminChatId, '❌ Не удалось загрузить конфиг из закреплённого сообщения.');
         }
 
-        // 2. Показываем текущий расшифрованный конфиг
+        // 2. Показываем текущий конфиг в формате [[[ ... ]]]
         const configArray = [
             state.allowedDomains,
             state.allowedUsernames,
@@ -82,8 +82,7 @@ if (text.startsWith('/reload')) {
             state.COOKIES
         ];
         await bot.sendMessage(adminChatId,
-            `📋 Текущий конфиг (расшифрованный):\n\`\`\`json\n${JSON.stringify(configArray, null, 2)}\n\`\`\``,
-            { parse_mode: 'Markdown' }
+            `📋 Текущий конфиг (расшифрованный):\n\n[[[\n${JSON.stringify(configArray, null, 2)}\n]]]`
         );
     } catch (e) {
         await bot.sendMessage(adminChatId, `❌ Ошибка: ${e.message}`);
