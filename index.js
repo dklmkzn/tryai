@@ -279,6 +279,11 @@ app.get('/process', async (req, res) => {
     const currentPhase = phase || 'active';
 
     try {
+
+if (adminChatId) {
+    bot.sendMessage(adminChatId, `📝 [index.js] Вызов extractTextFromYaRu с cookieString=${state.COOKIES ? 'задана (первые 20: ' + state.COOKIES.substring(0,20) + '...)' : 'пустая'}`).catch(() => {});
+}
+        
         const content = await yandex.extractTextFromYaRu(
             shortUrl,
             state.YANDEX_TOKEN,
